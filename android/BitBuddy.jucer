@@ -4,7 +4,9 @@
   Android build of BitBuddy (standalone app).
   JUCE's CMake API doesn't support Android, so this Projucer project generates
   the Android Studio / Gradle project:   Projucer - -resave android/BitBuddy.jucer
-  It compiles the same ../src files as the desktop build. CI does all of this:
+  It compiles the same ../src files as the desktop build. useAppConfig="0" passes the JUCE
+  settings as compiler definitions (like CMake does), because ../src includes JUCE modules
+  directly instead of a generated JuceHeader.h. CI does all of this:
   see .github/workflows/build.yml (job "android").
 -->
 <JUCERPROJECT id="BbDy8A" name="BitBuddy" projectType="audioplug" version="1.0.1"
@@ -12,7 +14,8 @@
               pluginFormats="buildStandalone" pluginName="BitBuddy" pluginDesc="Easy chiptune / 8-bit synth"
               pluginManufacturerCode="Bbdl" pluginCode="Bbd1"
               pluginCharacteristicsValue="pluginIsSynth,pluginWantsMidiIn,pluginEditorRequiresKeys"
-              cppLanguageStandard="20" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+              cppLanguageStandard="20" addUsingNamespaceToJuceHeader="0" useAppConfig="0"
+              jucerFormatVersion="1">
   <MAINGROUP id="BbG001" name="BitBuddy">
     <GROUP id="BbG002" name="src">
       <FILE id="BbF001" name="ChipEngine.cpp" compile="1" resource="0" file="../src/ChipEngine.cpp"/>

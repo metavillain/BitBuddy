@@ -32,6 +32,11 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 21 | Share package for a friend (`scripts/make-share-package.ps1`) | self-contained zip: exe + VST3 + .bat installer + READ ME FIRST + guide + demo + source + licenses | – |
 | 22 | Cleanup + efficiency pass (measured before/after, §9) | VST3 9.10 → 6.73 MB, chords CPU −25%, idle CPU −75%; 46/46 tests, pluginval OK, 0 warnings | caught own idle-path bug via a new test |
 | 23 | Folder consolidation | `src/ tests/ scripts/ docs/reports/`; one `scripts/build-and-test.ps1` replaces ~8 manual commands | – |
+| 24 | Mac version via GitHub Actions (universal AU + VST3 + app) | **first CI run green**: auval OK, 46/46 on VST3 *and* AU, pluginval OK ×2 | – (no Mac needed) |
+| 25 | Repo made public + AGPLv3 LICENSE (user's choice) | free unlimited CI incl. 10×-cost macOS minutes; Release page shareable by link | first `git push` of a workflow file: **HTTP 403** (see §4) |
+| 26 | Android: `android/BitBuddy.jucer` (JUCE CMake can't do Android) | Projucer → Gradle APK in CI + Android 14 emulator smoke test; zero permissions | – |
+| 27 | iOS: CMake Xcode build, AUv3 + app | CI simulator build + iPad simulator smoke test (device install needs an Apple account) | – |
+| 28 | App icon + touch UI (tap = help, fit-to-screen) | one `assets/icon.png` for all platforms | – |
 
 ---
 
@@ -56,6 +61,10 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
     packaging (zip + installer + plain-text readme), licensing (AGPL → ship source) and platform (Mac = AU build).
 12. **How will you play it: mouse, computer keys, MIDI keyboard?** Computer-key playing turned out to
     matter a lot, and focus behaviour needed a dedicated fix and test.
+13. **Which platforms, eventually: Windows / Mac / iPhone-iPad / Android?** Mac, iOS and Android were asked
+    for after the Windows build. Knowing up front means touch-friendly UI, an app icon, and CI from day one.
+14. **Public or private repo, and do you have an Apple Developer account ($99/yr) or an Android phone?**
+    Decides CI cost (macOS minutes are 10× on private repos), the license, and whether iOS can be shared.
 
 ---
 
@@ -121,6 +130,37 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
   touch the file (`(Get-Item f).LastWriteTime = Get-Date`). A "fixed" run that fails identically to the
   mutant is the tell-tale sign.
 - The Claude Code harness blocks wildcard `Remove-Item` on variable paths. Delete exact paths (`-LiteralPath`).
+
+**Cross-platform + CI gotchas**
+- **`git push` of `.github/workflows/*` fails with HTTP 403** if git's stored credential lacks the `workflow`
+  scope, even when `gh` has it. Push with gh's token for that one command:
+  `git -c credential.helper= -c "credential.helper=!gh auth git-credential" push`.
+- **Private repos: macOS runner minutes count 10×** against the free 2,000/month. Public repos are free and
+  unlimited. Decide visibility before turning on Mac/iOS CI.
+- `concurrency: cancel-in-progress: true` means **a new push cancels the running CI run**. Wait for a run you
+  care about before pushing again.
+- **JUCE's CMake API does not support Android.** Use a Projucer `.jucer` that compiles the same `src/`.
+  Build the Projucer from `external/JUCE` (`-DJUCE_BUILD_EXTRAS=ON`, target `Projucer`), run `--resave`
+  (Linux CI: under `xvfb-run`).
+- **A `.jucer` sharing CMake-style sources needs `useAppConfig="0"`.** CMake-style code includes JUCE modules
+  directly; with the default AppConfig.h every file fails with *"No global header file was included!"*.
+  `useAppConfig="0"` passes the same settings as compiler definitions, exactly like CMake.
+- **macOS runners can fail to start** ("not acquired by Runner … even after multiple attempts" = GitHub
+  capacity, not your code). Just re-run; check the job's annotations before debugging anything.
+- **Projucer's Android defaults request INTERNET, READ_MEDIA_*, storage and notification permissions.**
+  Turn off `androidInternetNeeded`, `androidReadMedia*Permission`, `androidExternalWriteNeeded`,
+  `androidPushNotifications` → zero permissions.
+- **Generated `local.properties` contains the local SDK path (with the Windows username).** Never commit
+  `android/Builds/` or `android/JuceLibraryCode/`; CI regenerates them.
+- Projucer Gradle variants are `<flavor>_<buildType>`: the release APK task is **`assembleRelease_Release`**.
+  Signing uses `~/.android/debug.keystore` (create it with `keytool` in CI).
+- `ReactiveCircus/android-emulator-runner`'s `script:` runs **line by line**: put multi-step logic in a script file.
+- **iOS works with CMake:** `-G Xcode -DCMAKE_SYSTEM_NAME=iOS`. Set `CMAKE_OSX_DEPLOYMENT_TARGET` /
+  `CMAKE_OSX_ARCHITECTURES` *before* `project()` depending on `CMAKE_SYSTEM_NAME`; formats `AUv3 Standalone`;
+  skip desktop-only targets (`return()`). Simulator builds need no signing (`CODE_SIGNING_ALLOWED=NO`).
+- macOS AU testing in CI: copy the `.component` to `~/Library/Audio/Plug-Ins/Components`,
+  `killall -9 AudioComponentRegistrar`, then `auval -v aumu <subtype> <manufacturer>`.
+- Share zips: `git archive HEAD -- . ':(exclude)demo/*.wav'` avoids duplicating big assets in the source copy.
 
 ---
 

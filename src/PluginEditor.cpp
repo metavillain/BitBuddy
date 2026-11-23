@@ -339,7 +339,7 @@ void EnvelopeView::paint (juce::Graphics& g)
 
     const float x1 = wa / total, x2 = x1 + wd / total, x3 = x2 + ws / total;
 
-    auto level = [=] (float x)
+    auto level = [=, this] (float x)
     {
         if (x < x1) return x / x1;
         if (x < x2) return 1.0f - (1.0f - s) * (x - x1) / (x2 - x1);
