@@ -34,6 +34,8 @@
       <FILE id="BbF014" name="Recorder.cpp" compile="1" resource="0" file="../src/Recorder.cpp"/>
       <FILE id="BbF015" name="Recorder.h" compile="0" resource="0" file="../src/Recorder.h"/>
       <FILE id="BbF016" name="Scales.h" compile="0" resource="0" file="../src/Scales.h"/>
+      <FILE id="BbF017" name="JamBand.cpp" compile="1" resource="0" file="../src/JamBand.cpp"/>
+      <FILE id="BbF018" name="JamBand.h" compile="0" resource="0" file="../src/JamBand.h"/>
     </GROUP>
     <GROUP id="BbG003" name="assets">
       <FILE id="BbFont" name="PressStart2P-Regular.ttf" compile="0" resource="1" file="../assets/PressStart2P-Regular.ttf"/>

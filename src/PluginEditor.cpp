@@ -1142,8 +1142,8 @@ void HelpOverlay::paint (juce::Graphics& g)
                              "notes super fast. Set CHORD and hold one key - instant chiptune chord!" },
         { "5. MOVE & CRUNCH", "Vibrato makes leads sing. Sweep makes lasers, jumps and drum hits. "
                               "Bits / Rate add grit, Echo adds space." },
-        { "PLAY ALONG", "Pick a KEY and SCALE LOCK (bottom right) and every key you press fits the song - no wrong "
-                        "notes. Set CHORD to SMART and each key plays the chord that belongs to it." },
+        { "PLAY ALONG", "Pick a KEY and SCALE LOCK (bottom right): every key fits the song. CHORD + SMART = the right "
+                        "chord per key. In the app, JAM starts a backing band and REC records you." },
         { "MAKING A SONG", "Use one BitBuddy per track in your DAW, just like the NES used separate channels: "
                            "Lead (Hero Lead), Chords (Chord Arp), Bass (Triangle Bass), Drums (Drum Kit)." },
     };
@@ -1388,8 +1388,38 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     appOnlyNote.setText ("JAM + RECORD live in the BitBuddy app. In your DAW, record with the DAW itself!",
                          juce::dontSendNotification);
 
+    // --- play along: JAM band ---
+    jamButton.setTooltip ("JAM: starts a little chiptune band - drums, bass and chords - in your KEY and SCALE. "
+                          "Make up a melody on top! (With SCALE LOCK on, every note fits.)");
+    jamButton.setColour (juce::TextButton::buttonColourId, pal::green);
+    jamButton.onClick = [this] { proc.setJamOn (! proc.isJamOn()); updateJamControls(); };
+    for (int i = 0; i < kNumJamStyles; ++i)
+        jamStyleBox.addItem (juce::String (jamStyleName (i)).toUpperCase(), i + 1);
+    jamStyleBox.setTooltip ("STYLE: what kind of song the band plays. ADVENTURE = happy hero theme, DUNGEON = dark and "
+                            "slow, RACING = fast and pumping, CHILL = relaxed.");
+    jamStyleBox.setColour (juce::ComboBox::outlineColourId, pal::pink);
+    jamStyleBox.onChange = [this]
+    {
+        if (jamStyleBox.getSelectedId() > 0)
+            proc.setJamStyle (jamStyleBox.getSelectedId() - 1);
+        updateJamControls();
+    };
+    tempoDownButton.setTooltip ("TEMPO -: the band plays slower.");
+    tempoUpButton.setTooltip ("TEMPO +: the band plays faster.");
+    tempoDownButton.onClick = [this] { proc.setJamTempo (proc.getJamTempo() - 4.0f); updateJamControls(); };
+    tempoUpButton.onClick   = [this] { proc.setJamTempo (proc.getJamTempo() + 4.0f); updateJamControls(); };
+    tempoLabel.setFont (pixelFont (7.0f));
+    tempoLabel.setJustificationType (juce::Justification::centred);
+    tempoLabel.setColour (juce::Label::textColourId, pal::pink);
+    tempoLabel.setTooltip ("TEMPO: how fast the band plays, in beats per minute.");
+
     if (proc.isStandaloneApp())
     {
+        for (auto* c : { (juce::Component*) &jamButton, (juce::Component*) &jamStyleBox, (juce::Component*) &tempoDownButton,
+                         (juce::Component*) &tempoLabel, (juce::Component*) &tempoUpButton })
+            addAndMakeVisible (c);
+        updateJamControls();
+
         addAndMakeVisible (recordButton);
         addAndMakeVisible (recordStatus);
         addChildComponent (showRecordingButton);
@@ -1531,7 +1561,7 @@ void MainPanel::paint (juce::Graphics& g)
     drawSection (g, s3, "3", "MAGIC CHORDS  (ARPEGGIATOR)", pal::cyan);
     drawSection (g, s4, "4", "ADD MOVEMENT", pal::orange);
     drawSection (g, s5, "5", "CRUNCH + ECHO", pal::sky);
-    drawSection (g, sPlay, {}, "PLAY ALONG  (KEY + SCALE)", pal::pink);
+    drawSection (g, sPlay, {}, proc.isStandaloneApp() ? "PLAY ALONG  (KEY, SCALE, JAM, REC)" : "PLAY ALONG  (KEY + SCALE)", pal::pink);
 
     // Hint bar
     g.setColour (pal::navy);
@@ -1621,6 +1651,11 @@ void MainPanel::resized()
     scaleLabel.setBounds (590, 578, 140, 12);
     scaleBox.setBounds (590, 592, 140, 26);
     scaleTip.setBounds (740, 576, 244, 46);
+    jamButton.setBounds (510, 628, 62, 26);
+    jamStyleBox.setBounds (576, 630, 100, 22);
+    tempoDownButton.setBounds (680, 628, 18, 26);
+    tempoLabel.setBounds (698, 628, 58, 26);
+    tempoUpButton.setBounds (756, 628, 18, 26);
     recordButton.setBounds (780, 628, 64, 26);
     recordStatus.setBounds (846, 628, 74, 26);
     showRecordingButton.setBounds (922, 628, 60, 26);
@@ -1683,6 +1718,15 @@ void MainPanel::timerCallback()
         focusKeyboard();
 
     updateKeysStatus();
+}
+
+void MainPanel::updateJamControls()
+{
+    const bool on = proc.isJamOn();
+    jamButton.setButtonText (on ? "STOP" : "JAM");
+    jamButton.setColour (juce::TextButton::buttonColourId, on ? pal::orange : pal::green);
+    jamStyleBox.setSelectedId (proc.getJamStyle() + 1, juce::dontSendNotification);
+    tempoLabel.setText (juce::String (juce::roundToInt (proc.getJamTempo())) + " BPM", juce::dontSendNotification);
 }
 
 void MainPanel::toggleRecording()

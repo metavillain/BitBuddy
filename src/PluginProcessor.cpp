@@ -234,6 +234,7 @@ void BitBuddyProcessor::prepareToPlay (double sampleRate, int)
     echo.prepare (sampleRate);
     filter.prepare (sampleRate);
     consoleTone.prepare (sampleRate);
+    jam.prepare (sampleRate);
     dcBlocker.reset();
     effectsIdle = true;
     echoWasOn = filterWasOn = false;
@@ -307,6 +308,11 @@ void BitBuddyProcessor::updateEngineParams()
     outputGain.setTargetValue (juce::Decibels::decibelsToGain (pVolume->load()));
 }
 
+int BitBuddyProcessor::idxOf (std::atomic<float>* p, int maxIndex) noexcept
+{
+    return juce::jlimit (0, maxIndex, (int) std::lround (p->load()));
+}
+
 void BitBuddyProcessor::handleMidi (const juce::MidiMessage& m)
 {
     if (m.isNoteOn())
@@ -367,9 +373,17 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     midi.clear();
 
+    // The JAM band follows your Key + Scale (it's mixed in after your effects, below)
+    jam.setSong (idxOf (pScaleKey, 11), (bb::Scale) idxOf (pScale, bb::kNumScales - 1));
+    jam.setStyle (jamStyle.load());
+    jam.setTempo (jamTempo.load());
+    if (jamOn.load() != jam.isPlaying())
+        jamOn.load() ? jam.start() : jam.stop();
+    const bool useJam = jam.isSounding();
+
     // 2. Nothing playing and every effect tail has died away? The cleared buffer
     //    is already the right answer, so an idle BitBuddy costs (almost) nothing.
-    if (! engineActive && effectsIdle)
+    if (! engineActive && effectsIdle && ! useJam)
     {
         outputGain.skip (numSamples);
         scope.pushSilence (numSamples);
@@ -417,8 +431,17 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         if (useEcho)
             echo.process (x, echoMix, echoFeedback, l, r);
 
-        l = softLimit (l * g);   // gentle safety limiter: big chords round off instead of crackling
-        r = softLimit (r * g);
+        l *= g;
+        r *= g;
+        if (useJam)
+        {
+            const float band = jam.nextSample();
+            l += band;
+            r += band;
+        }
+
+        l = softLimit (l);   // gentle safety limiter: big chords round off instead of crackling
+        r = softLimit (r);
         peak = juce::jmax (peak, std::abs (l), std::abs (r));
 
         if (right != nullptr)
@@ -776,6 +799,8 @@ void BitBuddyProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("userPreset", userPresetLoaded, nullptr);
     state.setProperty ("customWave", customWaveToString (getCustomWave()), nullptr);
     saveMacrosTo (state);
+    state.setProperty ("jamStyle", jamStyle.load(), nullptr);   // (the band always starts stopped)
+    state.setProperty ("jamTempo", jamTempo.load(), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -794,6 +819,8 @@ void BitBuddyProcessor::setStateInformation (const void* data, int sizeInBytes)
             bb::CustomWave w {};
             setCustomWave (customWaveFromString (tree.getProperty ("customWave", "").toString(), w) ? w : bb::defaultCustomWave());
             loadMacrosFrom ([&tree] (const juce::String& key) { return tree.getProperty (juce::Identifier (key), "").toString(); });
+            setJamStyle ((int) tree.getProperty ("jamStyle", 0));
+            setJamTempo ((float) (double) tree.getProperty ("jamTempo", bb::jamStyleTempo (jamStyle)));
             apvts.replaceState (tree);
         }
     }

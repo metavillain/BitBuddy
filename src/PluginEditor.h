@@ -345,6 +345,12 @@ private:
     juce::Label keyLabel, scaleLabel, scaleTip;
     void updateScaleTip();
 
+    // play along: JAM band (BitBuddy app only)
+    juce::TextButton jamButton { "JAM" }, tempoDownButton { "-" }, tempoUpButton { "+" };
+    juce::ComboBox jamStyleBox;
+    juce::Label tempoLabel;
+    void updateJamControls();
+
     // play along: RECORD (BitBuddy app only)
     juce::TextButton recordButton { "REC" }, showRecordingButton { "SHOW" };
     juce::Label recordStatus, appOnlyNote;

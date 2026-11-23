@@ -8,6 +8,7 @@
 
 #include "ChipEngine.h"
 #include "Effects.h"
+#include "JamBand.h"
 #include "Recorder.h"
 
 // Lock-free ring buffer so the UI "screen" can show the live waveform.
@@ -137,6 +138,14 @@ public:
     bb::Recorder recorder;
     bool isStandaloneApp() const noexcept { return wrapperType == wrapperType_Standalone; }
 
+    /** JAM (BitBuddy app): a backing band in your KEY + SCALE. */
+    void setJamOn (bool on) noexcept       { jamOn = on; }
+    bool isJamOn() const noexcept          { return jamOn; }
+    void setJamStyle (int style) noexcept  { jamStyle = juce::jlimit (0, bb::kNumJamStyles - 1, style); jamTempo = (float) bb::jamStyleTempo (jamStyle); }
+    int getJamStyle() const noexcept       { return jamStyle; }
+    void setJamTempo (float bpm) noexcept  { jamTempo = juce::jlimit (40.0f, 240.0f, bpm); }
+    float getJamTempo() const noexcept     { return jamTempo; }
+
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;   // on-screen keyboard -> synth
     ScopeBuffer scope;
@@ -145,6 +154,7 @@ private:
     void updateEngineParams();
     void handleMidi (const juce::MidiMessage&);
     void writeRecording (const juce::AudioBuffer<float>&, int numSamples) noexcept;
+    static int idxOf (std::atomic<float>* p, int maxIndex) noexcept;
     void loadProgram (int index);
 
     bb::ChipEngine engine;
@@ -153,6 +163,10 @@ private:
     bb::PingPongEcho echo;
     bb::SidFilter filter;
     bb::ConsoleTone consoleTone;
+    bb::JamBand jam;
+    std::atomic<bool> jamOn { false };
+    std::atomic<int> jamStyle { 0 };
+    std::atomic<float> jamTempo { 120.0f };
     juce::SmoothedValue<float> outputGain;
     float echoMix = 0.0f, echoFeedback = 0.0f;
     bool echoWasOn = false, filterWasOn = false;

@@ -937,6 +937,58 @@ static int runTests (const String& path)
                    String (macroSaved ? "saved" : "LOST") + ", " + (clearedByPreset ? "cleared" : "STILL ON") + ", "
                        + (presetMacros ? "preset ok" : "PRESET WRONG"));
 
+        // ---- JAM band: plays in your key, every chord root right, nothing broken ----
+        {
+            auto bassNoteAt = [&] (int key, bb::Scale scale, int style, double fromSec)
+            {
+                bb::JamBand band;
+                band.prepare (sr);
+                band.setSong (key, scale);
+                band.setStyle (style);
+                band.setTempo (bb::jamStyleTempo (style));
+                band.setTrackLevels (0.0f, 1.0f, 0.0f);   // bass only
+                band.start();
+                AudioBuffer<float> out (1, (int) (sr * (fromSec + 0.4)));
+                for (int i = 0; i < out.getNumSamples(); ++i)
+                    out.setSample (0, i, band.nextSample());
+                return 69.0 + 12.0 * std::log2 (pitchAt (out, fromSec, 8192, sr, 40.0) / 440.0);
+            };
+            // Adventure in C major: bar 1 = C (bass C2), bar 2 = G (G2); A minor: bar 1 = A (A2)
+            const double c = bassNoteAt (0, bb::Scale::Major, 0, 0.02);
+            const double g = bassNoteAt (0, bb::Scale::Major, 0, 2.02);
+            const double a = bassNoteAt (9, bb::Scale::Minor, 0, 0.02);
+            res.check (std::abs (c - 36) < 0.3 && std::abs (g - 43) < 0.3 && std::abs (a - 45) < 0.3,
+                       "JAM: bass follows the song (C major: C then G; A minor: A)",
+                       String (c, 1) + " " + String (g, 1) + " " + String (a, 1));
+
+            // Every style, full band, 8 s: finite, audible, never clipping
+            String levels;
+            bool bandOk = true;
+            for (int style = 0; style < bb::kNumJamStyles; ++style)
+            {
+                bb::JamBand band;
+                band.prepare (sr);
+                band.setSong (2, bb::Scale::Dorian);
+                band.setStyle (style);
+                band.setTempo (bb::jamStyleTempo (style));
+                band.start();
+                float peakBand = 0.0f;
+                bool finite = true;
+                for (int i = 0; i < (int) (sr * 8.0); ++i)
+                {
+                    const float x = band.nextSample();
+                    finite = finite && std::isfinite (x);
+                    peakBand = jmax (peakBand, std::abs (x));
+                }
+                band.stop();
+                for (int i = 0; i < (int) (sr * 5.0); ++i)   // a crash cymbal needs ~4 s to fade out
+                    band.nextSample();
+                bandOk = bandOk && finite && peakBand > 0.05f && peakBand < 0.98f && ! band.isSounding();
+                levels << bb::jamStyleName (style) << " " << String (Decibels::gainToDecibels (peakBand), 1) << " dB  ";
+            }
+            res.check (bandOk, "JAM: all 4 styles play, stay below 0 dBFS, stop cleanly", levels);
+        }
+
         // ---- RECORD: WAV + MIDI files ----
         {
             bb::Recorder rec;
@@ -1247,6 +1299,7 @@ static Button* findButton (Component& root, const String& text)
 static int runSnapshot (const File& outDir)
 {
     outDir.createDirectory();
+    AudioProcessor::setTypeOfNextNewPlugin (AudioProcessor::wrapperType_Standalone);   // the app: JAM + REC visible
     BitBuddyProcessor proc;
     proc.prepareToPlay (44100.0, 512);
 
@@ -1367,6 +1420,7 @@ static int runFocusTest()
     Results res;
     std::cout << "\n=== Keyboard focus test ===\n\n";
 
+    AudioProcessor::setTypeOfNextNewPlugin (AudioProcessor::wrapperType_Standalone);   // the app: JAM + REC visible
     BitBuddyProcessor proc;
     proc.prepareToPlay (44100.0, 512);
     std::unique_ptr<AudioProcessorEditor> editor (proc.createEditor());
