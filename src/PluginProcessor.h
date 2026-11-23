@@ -134,6 +134,8 @@ private:
     std::atomic<float>* pEchoTime = nullptr;
     std::atomic<float>* pEchoFeedback = nullptr;
     std::atomic<float>* pVolume = nullptr;
+    std::atomic<float>* pScaleKey = nullptr;
+    std::atomic<float>* pScale = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BitBuddyProcessor)
 };

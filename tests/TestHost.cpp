@@ -301,9 +301,9 @@ static int runTests (const String& path)
     int automatable = 0;
     for (auto* prm : plugin->getParameters())
         automatable += prm->isAutomatable() ? 1 : 0;
-    res.check (automatable >= 24 && automatable <= 26, "Automatable parameters in the DAW",
+    res.check (automatable >= 26 && automatable <= 28, "Automatable parameters in the DAW",
                String (automatable) + " (+" + String (plugin->getParameters().size() - automatable) + " hidden MIDI-CC slots)");
-    res.check (plugin->getNumPrograms() == 21, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
+    res.check (plugin->getNumPrograms() == 22, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
 
     // ---- 2. Every preset makes sound, stays finite, and goes silent --------
     std::cout << "\n  -- every preset: sound / no NaN / no clipping / no stuck notes --\n";

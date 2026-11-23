@@ -45,6 +45,8 @@ BitBuddyProcessor::BitBuddyProcessor()
     pEchoTime     = get (bb::ids::echoTime);
     pEchoFeedback = get (bb::ids::echoFeedback);
     pVolume       = get (bb::ids::volume);
+    pScaleKey     = get (bb::ids::scaleKey);
+    pScale        = get (bb::ids::scale);
 }
 
 //==============================================================================
@@ -94,7 +96,11 @@ void BitBuddyProcessor::updateEngineParams()
     ep.sustain    = juce::jlimit (0.0f, 1.0f, pSustain->load());
     ep.release    = pRelease->load();
     ep.arpMode    = (bb::ArpMode) idx (pArpMode, 2);
-    ep.arpChord   = idx (pArpChord, 8);
+    const int chord = idx (pArpChord, bb::kSmartChordIndex);
+    ep.smartChords = chord == bb::kSmartChordIndex;
+    ep.arpChord   = ep.smartChords ? 0 : chord;
+    ep.scaleKey   = idx (pScaleKey, 11);
+    ep.scale      = (bb::Scale) idx (pScale, bb::kNumScales - 1);
     ep.arpPattern = (bb::ArpPattern) idx (pArpPattern, 4);
     ep.arpOctaves = juce::jlimit (1, 3, (int) std::lround (pArpOctaves->load()));
 
@@ -325,7 +331,7 @@ void BitBuddyProcessor::randomize()
 
     const float arp = rng.nextFloat();
     set (bb::ids::arpMode,    arp < 0.4f ? 0.0f : (arp < 0.8f ? 1.0f : 2.0f));
-    set (bb::ids::arpChord,   (float) rng.nextInt (9));
+    set (bb::ids::arpChord,   (float) rng.nextInt (bb::kSmartChordIndex + 1));
     set (bb::ids::arpPattern, (float) rng.nextInt (5));
     set (bb::ids::arpSpeed,   (float) rng.nextInt (8));
     set (bb::ids::arpOctaves, (float) (1 + rng.nextInt (2)));

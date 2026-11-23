@@ -23,6 +23,7 @@ inline const juce::Colour white  { 0xfff4f4f4 };
 inline const juce::Colour light  { 0xff94b0c2 };
 inline const juce::Colour grey   { 0xff566c86 };
 inline const juce::Colour dark   { 0xff333c57 };
+inline const juce::Colour pink   { 0xfff49ac1 };   // extra: the PLAY ALONG section
 } // namespace pal
 
 /** Keeps the embedded pixel font alive while the UI is open. */

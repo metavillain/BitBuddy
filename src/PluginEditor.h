@@ -121,11 +121,11 @@ private:
 };
 
 //==============================================================================
-/** Everything you see. Designed at 1000 x 660 and scaled to the window size. */
+/** Everything you see. Designed at 1000 x 778 and scaled to the window size. */
 class MainPanel : public juce::Component, private juce::Timer
 {
 public:
-    static constexpr int baseWidth = 1000, baseHeight = 660;
+    static constexpr int baseWidth = 1000, baseHeight = 778;
 
     MainPanel (BitBuddyProcessor&, RetroLookAndFeel&);
     ~MainPanel() override;
@@ -187,16 +187,22 @@ private:
     juce::ComboBox echoTimeBox;
     juce::Label echoTimeLabel;
 
+    // play along: Scale Lock
+    juce::ComboBox keyBox, scaleBox;
+    juce::Label keyLabel, scaleLabel, scaleTip;
+    void updateScaleTip();
+
     juce::Label hintLabel;
     juce::Label keysStatus;
     juce::String lastKeysStatus;
     ChipKeyboard keyboard;
     HelpOverlay help;
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> chordAtt, patternAtt, speedAtt, echoTimeAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> chordAtt, patternAtt, speedAtt, echoTimeAtt,
+                                                                            keyAtt, scaleAtt;
 
-    juce::Rectangle<int> s1, sScope, s2, s3, s4, s5, hintArea;
-    int lastWave = -1, lastArpMode = -1;
+    juce::Rectangle<int> s1, sScope, s2, s3, s4, s5, s6, sPlay, hintArea;
+    int lastWave = -1, lastArpMode = -1, lastScaleState = -1;
     juce::String lastPresetName;
 };
 } // namespace bb

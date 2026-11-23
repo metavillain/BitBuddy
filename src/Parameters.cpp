@@ -4,11 +4,13 @@ namespace bb
 {
 juce::StringArray waveNames()       { return { "Square", "Pulse 25%", "Pulse 12.5%", "Triangle", "Saw", "Noise", "Metal Noise", "Drum Kit" }; }
 juce::StringArray arpModeNames()    { return { "Off", "Chord", "Notes" }; }
-juce::StringArray arpChordNames()   { return { "Major", "Minor", "Power", "Octave", "Sus4", "Major 7", "Minor 7", "Diminished", "Fourth (Coin)" }; }
+juce::StringArray arpChordNames()   { return { "Major", "Minor", "Power", "Octave", "Sus4", "Major 7", "Minor 7", "Diminished", "Fourth (Coin)", "Smart" }; }
 juce::StringArray arpPatternNames() { return { "Up", "Down", "Up & Down", "Random", "Once" }; }
 juce::StringArray arpSpeedNames()   { return { "1/8", "1/16", "1/16 T", "1/32", "1/64", "15 Hz", "30 Hz", "60 Hz" }; }
 juce::StringArray echoTimeNames()   { return { "1/16", "1/8", "1/8 D", "1/4", "1/4 D", "1/2" }; }
 juce::StringArray voiceModeNames()  { return { "Poly", "Mono" }; }
+juce::StringArray keyNames()        { return { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }; }
+juce::StringArray scaleNames()      { return { "Off", "Major", "Minor", "Major Penta", "Minor Penta", "Blues", "Dorian", "Harm. Minor" }; }
 
 namespace
 {
@@ -72,9 +74,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id, 1 }, name, range, def, attrs));
     };
 
-    auto addChoice = [&layout] (const char* id, const char* name, const StringArray& choices, int def)
+    // version = the BitBuddy release that added the parameter (hosts use it to keep their order stable)
+    auto addChoice = [&layout] (const char* id, const char* name, const StringArray& choices, int def, int version = 1)
     {
-        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id, 1 }, name, choices, def));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id, version }, name, choices, def));
     };
 
     // 1. Sound source
@@ -114,6 +117,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     addChoice (ids::echoTime,    "Echo Time",     echoTimeNames(), 2);
     addFloat (ids::echoFeedback, "Echo Repeats",  { 0.0f, 0.9f },  0.35f, percentText, percentFromText);
     addFloat (ids::volume,       "Volume",        { -40.0f, 6.0f, 0.1f }, -3.0f, dbText);
+
+    // 6. Play (added in 1.1): Scale Lock
+    addChoice (ids::scaleKey, "Key",   keyNames(),   0, 2);
+    addChoice (ids::scale,    "Scale", scaleNames(), 0, 2);
 
     return layout;
 }

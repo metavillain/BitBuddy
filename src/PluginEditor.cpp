@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "Parameters.h"
 #include "Presets.h"
+#include "Scales.h"
 
 #include <cmath>
 
@@ -576,7 +577,8 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     // --- 3. magic chords ---
     addAndMakeVisible (arpModeButtons);
     setupCombo (chordBox, chordLabel, "CHORD", arpChordNames(),
-                "CHORD TYPE: which chord CHORD mode plays. Major = happy, Minor = sad, Power = rock, Fourth = the 'coin' sound.",
+                "CHORD TYPE: which chord CHORD mode plays. Major = happy, Minor = sad, Power = rock, Fourth = the 'coin' sound. "
+                "SMART = follows your KEY + SCALE: every key gets the chord that fits the song.",
                 pal::cyan);
     setupCombo (patternBox, patternLabel, "PATTERN", arpPatternNames(),
                 "PATTERN: the order the notes play in. ONCE plays through a single time and then holds the top note - great for sound effects.",
@@ -605,6 +607,22 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
                 "ECHO TIME: the gap between echoes, locked to your song's tempo. 1/8 D (dotted eighth) is a classic choice.",
                 pal::sky);
     echoTimeAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, ids::echoTime, echoTimeBox);
+
+    // --- play along: Scale Lock ---
+    setupCombo (keyBox, keyLabel, "KEY", keyNames(),
+                "KEY: the home note of your song - the scale starts here. Not sure? Leave it on C.",
+                pal::pink);
+    setupCombo (scaleBox, scaleLabel, "SCALE LOCK", scaleNames(),
+                "SCALE LOCK: pick a scale and every key you press snaps to the nearest note in it - no wrong notes! "
+                "Major = happy, Minor = sad, Penta = can't miss, Blues, Dorian = adventure, Harm. Minor = spooky.",
+                pal::pink);
+    keyAtt   = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, ids::scaleKey, keyBox);
+    scaleAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, ids::scale, scaleBox);
+    scaleTip.setFont (textFont (13.0f, true));
+    scaleTip.setColour (juce::Label::textColourId, pal::pink);
+    scaleTip.setJustificationType (juce::Justification::topLeft);
+    scaleTip.setMinimumHorizontalScale (0.85f);
+    addAndMakeVisible (scaleTip);
 
     // --- bottom ---
     hintLabel.setFont (textFont (15.0f));
@@ -757,6 +775,7 @@ void MainPanel::paint (juce::Graphics& g)
     drawSection (g, s3, "3", "MAGIC CHORDS  (ARPEGGIATOR)", pal::cyan);
     drawSection (g, s4, "4", "ADD MOVEMENT", pal::orange);
     drawSection (g, s5, "5", "CRUNCH + ECHO", pal::sky);
+    drawSection (g, sPlay, {}, "PLAY ALONG  (KEY + SCALE)", pal::pink);
 
     // Hint bar
     g.setColour (pal::navy);
@@ -824,10 +843,17 @@ void MainPanel::resized()
     echoFeedback.setBounds (858, 418, 62, 118);
     volume.setBounds (922, 418, 62, 118);
 
-    hintArea = { 10, 550, 980, 28 };
+    sPlay = { 500, 550, 490, 112 };
+    keyLabel.setBounds (510, 578, 70, 12);
+    keyBox.setBounds (510, 592, 70, 26);
+    scaleLabel.setBounds (590, 578, 140, 12);
+    scaleBox.setBounds (590, 592, 140, 26);
+    scaleTip.setBounds (740, 576, 244, 46);
+
+    hintArea = { 10, 668, 980, 28 };
     hintLabel.setBounds (hintArea.reduced (2).withTrimmedLeft (26).withTrimmedRight (176));
     keysStatus.setBounds (hintArea.getRight() - 176, hintArea.getY() + 2, 172, hintArea.getHeight() - 4);
-    keyboard.setBounds (10, 584, 980, 70);
+    keyboard.setBounds (10, 702, 980, 70);
     help.setBounds (getLocalBounds());
 }
 
@@ -852,6 +878,7 @@ void MainPanel::timerCallback()
     }
 
     syncPresetBox();
+    updateScaleTip();
 
     // Whenever BitBuddy's own window is the active one (and no menu is open),
     // keep the letter keys on the piano. This also recovers focus after a menu
@@ -860,6 +887,29 @@ void MainPanel::timerCallback()
         focusKeyboard();
 
     updateKeysStatus();
+}
+
+void MainPanel::updateScaleTip()
+{
+    auto idx = [this] (const char* id, int maxIndex)
+    { return juce::jlimit (0, maxIndex, juce::roundToInt (state.getRawParameterValue (id)->load())); };
+
+    const int key = idx (ids::scaleKey, 11), scale = idx (ids::scale, kNumScales - 1);
+    const bool smart = idx (ids::arpChord, kSmartChordIndex) == kSmartChordIndex;
+    const int stateNow = key + 12 * scale + 12 * kNumScales * (smart ? 1 : 0);
+    if (stateNow == lastScaleState)
+        return;
+    lastScaleState = stateNow;
+
+    const auto name = keyNames()[key] + " " + scaleNames()[scale];
+    juce::String text;
+    if (scale == 0)
+        text = smart ? "SMART chords use the " + keyNames()[key] + " major scale. Pick a SCALE to lock your keys too!"
+                     : "Pick a SCALE and every key you press fits the song - no wrong notes!";
+    else
+        text = "SCALE LOCK on: every key plays a note of " + name + (smart ? ", and SMART chords follow it." : ". Dim keys snap to a neighbour.");
+
+    scaleTip.setText (text, juce::dontSendNotification);
 }
 
 void MainPanel::syncPresetBox()
@@ -918,7 +968,7 @@ BitBuddyEditor::BitBuddyEditor (BitBuddyProcessor& p)
     addAndMakeVisible (*panel);
 
     setResizable (true, true);
-    setResizeLimits (700, 462, 2000, 1320);
+    setResizeLimits (700, 545, 2000, 1556);
     if (auto* sizeLimits = getConstrainer())
         sizeLimits->setFixedAspectRatio ((double) bb::MainPanel::baseWidth / (double) bb::MainPanel::baseHeight);
 

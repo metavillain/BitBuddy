@@ -15,6 +15,10 @@ struct Preset
 
 const std::vector<Preset>& factoryPresets();
 
-/** Resets everything (except volume) to defaults, then applies the preset. */
+/** Settings that belong to your song, not to a sound: presets, SURPRISE ME!
+    and MUTATE leave them alone (volume, Key, Scale). */
+bool isSongSetting (const juce::String& paramId);
+
+/** Resets everything (except the song settings) to defaults, then applies the preset. */
 void applyPreset (juce::AudioProcessorValueTreeState&, int index);
 } // namespace bb

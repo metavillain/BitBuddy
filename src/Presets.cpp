@@ -6,7 +6,7 @@ namespace bb
 // Choice indices, for readability below
 namespace w   { constexpr float square = 0, pulse25 = 1, pulse12 = 2, triangle = 3, saw = 4, noise = 5, metal = 6, drums = 7; }
 namespace am  { constexpr float off = 0, chord = 1, notes = 2; }
-namespace ch  { constexpr float major = 0, minor = 1, power = 2, octave = 3, sus4 = 4, maj7 = 5, min7 = 6, dim = 7, fourth = 8; }
+namespace ch  { constexpr float major = 0, minor = 1, power = 2, octave = 3, sus4 = 4, maj7 = 5, min7 = 6, dim = 7, fourth = 8, smart = 9; }
 namespace pat { constexpr float up = 0, down = 1, upDown = 2, random = 3, once = 4; }
 namespace sp  { constexpr float e8 = 0, s16 = 1, s16t = 2, t32 = 3, s64 = 4, hz15 = 5, hz30 = 6, hz60 = 7; }
 namespace et  { constexpr float s16 = 0, e8 = 1, e8d = 2, q4 = 3, q4d = 4, h2 = 5; }
@@ -44,6 +44,10 @@ const std::vector<Preset>& factoryPresets()
         { "Minor Chord Arp", "Hold ONE key - you get a whole sad / serious chord.",
           { { wave, w::square }, { arpMode, am::chord }, { arpChord, ch::minor }, { arpSpeed, sp::hz30 },
             { sustain, 0.8f }, { release, 0.15f }, { echoMix, 0.15f } } },
+
+        { "Smart Chords", "Pick a KEY + SCALE below, then hold ONE key at a time: always the right chord!",
+          { { wave, w::pulse25 }, { arpMode, am::chord }, { arpChord, ch::smart }, { arpSpeed, sp::hz30 },
+            { sustain, 0.8f }, { release, 0.2f }, { echoMix, 0.2f }, { echoTime, et::e8d } } },
 
         { "Power Arp", "Rock power chords, bouncing across two octaves.",
           { { wave, w::pulse12 }, { arpMode, am::chord }, { arpChord, ch::power }, { arpOctaves, 2.0f },
@@ -107,16 +111,22 @@ const std::vector<Preset>& factoryPresets()
     return presets;
 }
 
+bool isSongSetting (const juce::String& paramId)
+{
+    return paramId == ids::volume || paramId == ids::scaleKey || paramId == ids::scale;
+}
+
 void applyPreset (juce::AudioProcessorValueTreeState& apvts, int index)
 {
     const auto& presets = factoryPresets();
     if (index < 0 || index >= (int) presets.size())
         return;
 
-    // 1. Reset every parameter (except the user's volume) to its default
+    // 1. Reset every parameter to its default - except the ones that belong to
+    //    your song rather than to the sound: volume and the Key / Scale you play in
     for (auto* p : apvts.processor.getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
-            if (rp->getParameterID() != ids::volume)
+            if (! isSongSetting (rp->getParameterID()))
                 rp->setValueNotifyingHost (rp->getDefaultValue());
 
     // 2. Apply this preset's values

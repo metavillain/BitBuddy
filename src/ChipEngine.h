@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 
+#include "Scales.h"
+
 // =============================================================================
 //  BitBuddy chip engine
 //
@@ -35,6 +37,11 @@ struct EngineParams
     float pwm = 0.0f;                                          // 0..1
     float glide = 0.0f;                                        // seconds
     bool mono = false;
+
+    // Scale Lock: every key snaps to the nearest note of the scale (Off = no change)
+    int scaleKey = 0;                                          // 0 = C ... 11 = B
+    Scale scale = Scale::Off;
+    bool smartChords = false;                                  // CHORD mode picks the chord from the scale
 };
 
 class ChipEngine
@@ -115,10 +122,14 @@ private:
     void releaseVoice (Voice&) noexcept;
     Voice& allocateVoice (int note, bool drum);
 
+    void startNote (int note, float velocity);   // note = what sounds (after Scale Lock)
+    void stopNote (int note);
     void doNoteOff (int note);
     void addHeld (int note, float velocity);
     void removeHeld (int note);
-    void rebuildChordSequence();
+    int chordShapeFor (int note) const noexcept;
+    void rebuildChordSequences();
+    void rebuildSmartChords();
     void rebuildHeldSequence();
     void tickHeldArp() noexcept;
     void releaseAllTones() noexcept;
@@ -145,14 +156,23 @@ private:
     struct HeldNote { int note; float velocity; };
     std::array<HeldNote, 32> held {};
     int numHeld = 0;
-    std::array<bool, 128> keyDown {};
+    std::array<bool, 128> keyDown {};      // by sounding note
     std::array<bool, 128> sustained {};
     bool pedalDown = false;
 
-    // chord-mode arp sequence (semitone offsets)
-    std::array<int, 16> chordSeq {};
-    int chordSeqLen = 1;
-    int builtChord = -1, builtChordOctaves = -1;
+    // Scale Lock: which note each key on your keyboard is playing, and how many
+    // keys play each note (C and C# can both land on C in C major)
+    std::array<std::int8_t, 128> playedAs {};
+    std::array<std::uint8_t, 128> keyCount {};
+
+    // chord-mode arp sequences (semitone offsets), one per chord shape
+    static constexpr int kNumShapes = 10;  // the 9 chord types + augmented (Smart Chords only)
+    std::array<std::array<int, 16>, kNumShapes> chordSeqs {};
+    std::array<int, kNumShapes> chordSeqLens {};
+    int builtChordOctaves = -1;
+    std::array<int, 12> smartShape {};     // chord shape for each degree of the scale
+    Scale builtSmartScale = Scale::Off;
+    bool smartBuilt = false;
 
     // notes-mode arp (held keys) sequence
     std::array<int, 128> heldSeq {};

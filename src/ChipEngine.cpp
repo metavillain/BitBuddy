@@ -60,8 +60,11 @@ constexpr Chord kChords[] = {
     { 4, { 0, 3, 7, 10 } },  // Minor 7
     { 3, { 0, 3, 6 } },      // Diminished
     { 2, { 0, 5 } },         // Fourth (the "coin" sound)
+    { 3, { 0, 4, 8 } },      // Augmented (only used by Smart Chords, e.g. in harmonic minor)
 };
-constexpr int kNumChords = (int) (sizeof (kChords) / sizeof (kChords[0]));
+constexpr int kNumChords = 9;   // the chord types you can pick (Augmented is internal)
+constexpr int kShapeMajor = 0, kShapeMinor = 1, kShapePower = 2, kShapeDim = 7, kShapeAug = 9;
+static_assert (sizeof (kChords) / sizeof (kChords[0]) == 10);
 
 // Drum kit: one entry per note name (C, C#, D ... B) so every octave is a kit.
 struct DrumDef
@@ -107,6 +110,8 @@ void ChipEngine::prepare (double newSampleRate)
     numHeld = 0;
     keyDown.fill (false);
     sustained.fill (false);
+    playedAs.fill (-1);
+    keyCount.fill (0);
     pedalDown = false;
     heldArpRunning = false;
     lastNote = -1;
@@ -115,7 +120,8 @@ void ChipEngine::prepare (double newSampleRate)
     chokeMul = (float) std::exp (-1.0 / (0.006 * sampleRate));
 
     paramsInitialised = false;
-    builtChord = builtChordOctaves = builtHeldOctaves = -1;
+    builtChordOctaves = builtHeldOctaves = -1;
+    smartBuilt = false;
     setParams (p);
 }
 
@@ -126,6 +132,9 @@ void ChipEngine::setParams (const EngineParams& np)
     p = np;
     p.arpChord   = std::clamp (p.arpChord, 0, kNumChords - 1);
     p.arpOctaves = std::clamp (p.arpOctaves, 1, 3);
+    p.scaleKey   = std::clamp (p.scaleKey, 0, 11);
+    if ((int) p.scale < 0 || (int) p.scale >= kNumScales)
+        p.scale = Scale::Off;
     paramsInitialised = true;
 
     const double sr = sampleRate;
@@ -136,8 +145,11 @@ void ChipEngine::setParams (const EngineParams& np)
     glideCoeff  = glideOn ? (float) (1.0 - std::exp (-(double) kControlInterval / (p.glide * 0.25 * sr))) : 1.0f;
     arpStepSamples = std::max (16.0, p.arpStepSeconds * sr);
 
-    if (p.arpChord != builtChord || p.arpOctaves != builtChordOctaves)
-        rebuildChordSequence();
+    if (p.arpOctaves != builtChordOctaves)
+        rebuildChordSequences();
+
+    if (! smartBuilt || p.scale != builtSmartScale)
+        rebuildSmartChords();
 
     if (p.arpOctaves != builtHeldOctaves)
         rebuildHeldSequence();
@@ -152,17 +164,57 @@ void ChipEngine::setParams (const EngineParams& np)
 }
 
 //==============================================================================
-void ChipEngine::noteOn (int note, float velocity)
+// Keys -> notes. With Scale Lock on, the key you press can play a different
+// note (C# -> C in C major). Remember which, so its note-off stops the right
+// note even if you change the scale while holding it. Two keys can land on
+// the same note: it keeps sounding until both are released.
+void ChipEngine::noteOn (int key, float velocity)
 {
-    if (note < 0 || note > 127)
+    if (key < 0 || key > 127)
         return;
 
     if (velocity <= 0.0f)
     {
-        noteOff (note);
+        noteOff (key);
         return;
     }
 
+    if (const int old = playedAs[(size_t) key]; old >= 0)   // a repeated note-on without a note-off
+    {
+        playedAs[(size_t) key] = -1;
+        if (keyCount[(size_t) old] > 0 && --keyCount[(size_t) old] == 0)
+            stopNote (old);
+    }
+
+    const int note = p.wave == Wave::Drums ? key : snapToScale (key, p.scaleKey, p.scale);
+    playedAs[(size_t) key] = (std::int8_t) note;
+    if (keyCount[(size_t) note] < 255)
+        ++keyCount[(size_t) note];
+
+    startNote (note, velocity);
+}
+
+void ChipEngine::noteOff (int key)
+{
+    if (key < 0 || key > 127)
+        return;
+
+    const int note = playedAs[(size_t) key];
+    if (note < 0)
+    {
+        stopNote (key);   // a note-off we never saw the note-on for: treat it as itself
+        return;
+    }
+
+    playedAs[(size_t) key] = -1;
+    if (keyCount[(size_t) note] > 0 && --keyCount[(size_t) note] > 0)
+        return;           // another key is still holding this note
+
+    stopNote (note);
+}
+
+void ChipEngine::startNote (int note, float velocity)
+{
     keyDown[(size_t) note] = true;
     sustained[(size_t) note] = false;
 
@@ -221,11 +273,8 @@ void ChipEngine::noteOn (int note, float velocity)
     startVoice (v, note, velocity);
 }
 
-void ChipEngine::noteOff (int note)
+void ChipEngine::stopNote (int note)
 {
-    if (note < 0 || note > 127)
-        return;
-
     keyDown[(size_t) note] = false;
 
     if (pedalDown)
@@ -301,6 +350,8 @@ void ChipEngine::allNotesOff (bool immediate)
     numHeld = 0;
     keyDown.fill (false);
     sustained.fill (false);
+    playedAs.fill (-1);
+    keyCount.fill (0);
     heldArpRunning = false;
     rebuildHeldSequence();
 
@@ -357,30 +408,57 @@ void ChipEngine::removeHeld (int note)
     }
 }
 
-void ChipEngine::rebuildChordSequence()
+void ChipEngine::rebuildChordSequences()
 {
-    const auto& c = kChords[p.arpChord];
-    int tmp[16] {};
-    int n = 0;
+    for (int shape = 0; shape < kNumShapes; ++shape)
+    {
+        const auto& c = kChords[shape];
+        int tmp[16] {};
+        int n = 0;
 
-    for (int o = 0; o < p.arpOctaves; ++o)
-        for (int i = 0; i < c.count; ++i)
-        {
-            const int value = c.iv[i] + 12 * o;
-            bool duplicate = false;
-            for (int k = 0; k < n; ++k)
-                duplicate = duplicate || tmp[k] == value;
-            if (! duplicate && n < 16)
-                tmp[n++] = value;
-        }
+        for (int o = 0; o < p.arpOctaves; ++o)
+            for (int i = 0; i < c.count; ++i)
+            {
+                const int value = c.iv[i] + 12 * o;
+                bool duplicate = false;
+                for (int k = 0; k < n; ++k)
+                    duplicate = duplicate || tmp[k] == value;
+                if (! duplicate && n < 16)
+                    tmp[n++] = value;
+            }
 
-    std::sort (tmp, tmp + n);
-    for (int i = 0; i < n; ++i)
-        chordSeq[(size_t) i] = tmp[i];
+        std::sort (tmp, tmp + n);
+        for (int i = 0; i < n; ++i)
+            chordSeqs[(size_t) shape][(size_t) i] = tmp[i];
+        chordSeqLens[(size_t) shape] = std::max (1, n);
+    }
 
-    chordSeqLen = std::max (1, n);
-    builtChord = p.arpChord;
     builtChordOctaves = p.arpOctaves;
+}
+
+// Smart Chords: the chord that belongs on each note of the scale, e.g. in
+// C major C -> C major, D -> D minor, B -> B diminished. Notes outside the
+// scale get a power chord (root + fifth), which never clashes.
+void ChipEngine::rebuildSmartChords()
+{
+    for (int degree = 0; degree < 12; ++degree)
+    {
+        switch (triadOn (degree, p.scale))
+        {
+            case Triad::Major:      smartShape[(size_t) degree] = kShapeMajor; break;
+            case Triad::Minor:      smartShape[(size_t) degree] = kShapeMinor; break;
+            case Triad::Diminished: smartShape[(size_t) degree] = kShapeDim;   break;
+            case Triad::Augmented:  smartShape[(size_t) degree] = kShapeAug;   break;
+            case Triad::Outside:    smartShape[(size_t) degree] = kShapePower; break;
+        }
+    }
+    builtSmartScale = p.scale;
+    smartBuilt = true;
+}
+
+int ChipEngine::chordShapeFor (int note) const noexcept
+{
+    return p.smartChords ? smartShape[(size_t) degreeOf (note, p.scaleKey)] : p.arpChord;
 }
 
 void ChipEngine::rebuildHeldSequence()
@@ -495,7 +573,7 @@ void ChipEngine::startVoice (Voice& v, int note, float velocity)
 
     v.arpCounter = 0.0;
     v.arpDir = 1;
-    v.arpIndex = (p.arpPattern == ArpPattern::Down) ? chordSeqLen - 1 : 0;
+    v.arpIndex = (p.arpPattern == ArpPattern::Down) ? chordSeqLens[(size_t) chordShapeFor (note)] - 1 : 0;
     v.rng = 0x9E3779B9u * (std::uint32_t) (note + 1) + (std::uint32_t) ageCounter;
 
     v.choking = false;
@@ -656,13 +734,15 @@ float ChipEngine::renderTone (Voice& v) noexcept
     // Chord arpeggio: flip through the chord notes, without restarting the note
     if (p.arpMode == ArpMode::Chord)
     {
+        const auto& seq = chordSeqs[(size_t) chordShapeFor (v.note)];
+        const int len = chordSeqLens[(size_t) chordShapeFor (v.note)];
         v.arpCounter += 1.0;
         if (v.arpCounter >= arpStepSamples)
         {
             v.arpCounter -= arpStepSamples;
-            v.arpIndex = nextIndex (v.arpIndex, v.arpDir, chordSeqLen, p.arpPattern, v.rng);
+            v.arpIndex = nextIndex (v.arpIndex, v.arpDir, len, p.arpPattern, v.rng);
         }
-        note += (float) chordSeq[(size_t) std::clamp (v.arpIndex, 0, chordSeqLen - 1)];
+        note += (float) seq[(size_t) std::clamp (v.arpIndex, 0, len - 1)];
     }
 
     // The exponential note -> frequency conversion only runs when the pitch changes
