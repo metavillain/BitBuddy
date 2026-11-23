@@ -51,6 +51,57 @@ BitBuddyProcessor::BitBuddyProcessor()
     pFilterCutoff = get (bb::ids::filterCutoff);
     pFilterReso   = get (bb::ids::filterReso);
     pFilterEnv    = get (bb::ids::filterEnv);
+
+    setCustomWave (bb::defaultCustomWave());
+}
+
+//==============================================================================
+int BitBuddyProcessor::getCustomWaveStep (int index) const noexcept
+{
+    return customWave[(size_t) (index & (bb::kCustomWaveSteps - 1))].load (std::memory_order_relaxed);
+}
+
+void BitBuddyProcessor::setCustomWaveStep (int index, int value) noexcept
+{
+    if (juce::isPositiveAndBelow (index, bb::kCustomWaveSteps))
+        customWave[(size_t) index].store ((std::uint8_t) juce::jlimit (0, 15, value), std::memory_order_relaxed);
+}
+
+void BitBuddyProcessor::setCustomWave (const bb::CustomWave& w) noexcept
+{
+    for (int i = 0; i < bb::kCustomWaveSteps; ++i)
+        setCustomWaveStep (i, w[(size_t) i]);
+}
+
+bb::CustomWave BitBuddyProcessor::getCustomWave() const noexcept
+{
+    bb::CustomWave w {};
+    for (int i = 0; i < bb::kCustomWaveSteps; ++i)
+        w[(size_t) i] = (std::uint8_t) getCustomWaveStep (i);
+    return w;
+}
+
+void BitBuddyProcessor::customWaveEdited()
+{
+    markRemixed();
+    updateHostDisplay (juce::AudioProcessor::ChangeDetails().withNonParameterStateChanged (true));
+}
+
+juce::String BitBuddyProcessor::customWaveToString (const bb::CustomWave& w)
+{
+    juce::String s;
+    for (auto v : w)
+        s << juce::String::toHexString ((int) (v & 15)).toUpperCase();
+    return s;
+}
+
+bool BitBuddyProcessor::customWaveFromString (const juce::String& s, bb::CustomWave& w)
+{
+    if (s.length() != bb::kCustomWaveSteps || ! s.containsOnly ("0123456789abcdefABCDEF"))
+        return false;
+    for (int i = 0; i < bb::kCustomWaveSteps; ++i)
+        w[(size_t) i] = (std::uint8_t) juce::CharacterFunctions::getHexDigitValue (s[i]);
+    return true;
 }
 
 //==============================================================================
@@ -95,7 +146,9 @@ void BitBuddyProcessor::updateEngineParams()
     auto idx = [] (std::atomic<float>* p, int maxIndex) { return juce::jlimit (0, maxIndex, (int) std::lround (p->load())); };
 
     bb::EngineParams ep;
-    ep.wave       = (bb::Wave) idx (pWave, 7);
+    ep.wave       = (bb::Wave) idx (pWave, bb::kNumWaves - 1);
+    for (int i = 0; i < bb::kCustomWaveSteps; ++i)
+        ep.customWave[(size_t) i] = customWave[(size_t) i].load (std::memory_order_relaxed);
     ep.attack     = pAttack->load();
     ep.decay      = pDecay->load();
     ep.sustain    = juce::jlimit (0.0f, 1.0f, pSustain->load());
@@ -303,6 +356,12 @@ void BitBuddyProcessor::loadProgram (int index)
     customName = {};
     userPresetLoaded = false;
     bb::applyPreset (apvts, index);
+
+    // Presets that use DRAW bring their own drawing; others leave yours alone
+    bb::CustomWave w {};
+    if (const auto* drawing = bb::factoryPresets()[(size_t) index].customWave)
+        if (customWaveFromString (drawing, w))
+            setCustomWave (w);
 }
 
 const juce::String BitBuddyProcessor::getProgramName (int index)
@@ -502,6 +561,7 @@ bool BitBuddyProcessor::saveUserPreset (const juce::String& rawName)
 
     juce::XmlElement xml ("BitBuddyPreset");
     xml.setAttribute ("name", name);
+    xml.setAttribute ("customWave", customWaveToString (getCustomWave()));
    #ifdef JucePlugin_VersionString
     xml.setAttribute ("version", JucePlugin_VersionString);
    #endif
@@ -546,6 +606,10 @@ bool BitBuddyProcessor::loadUserPreset (const juce::String& name)
             rp->setValueNotifyingHost (rp->convertTo0to1 ((float) e->getDoubleAttribute ("value")));
     }
 
+    bb::CustomWave w {};
+    if (customWaveFromString (xml->getStringAttribute ("customWave"), w))
+        setCustomWave (w);
+
     customName = name;
     userPresetLoaded = true;
     return true;
@@ -565,6 +629,7 @@ void BitBuddyProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("program", currentProgram, nullptr);
     state.setProperty ("customName", customName, nullptr);
     state.setProperty ("userPreset", userPresetLoaded, nullptr);
+    state.setProperty ("customWave", customWaveToString (getCustomWave()), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -580,6 +645,8 @@ void BitBuddyProcessor::setStateInformation (const void* data, int sizeInBytes)
             currentProgram = juce::jlimit (0, getNumPrograms() - 1, (int) tree.getProperty ("program", 0));
             customName = tree.getProperty ("customName", "").toString();
             userPresetLoaded = (bool) tree.getProperty ("userPreset", false);
+            bb::CustomWave w {};
+            setCustomWave (customWaveFromString (tree.getProperty ("customWave", "").toString(), w) ? w : bb::defaultCustomWave());
             apvts.replaceState (tree);
         }
     }

@@ -139,6 +139,31 @@ private:
 };
 
 //==============================================================================
+/** DRAW YOUR WAVE: replaces the scope while the DRAW wave is picked. Click and
+    drag to draw one cycle (32 steps x 16 levels, like the Game Boy). */
+class WaveDrawer : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit WaveDrawer (BitBuddyProcessor&);
+    void refresh();
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+
+private:
+    juce::Rectangle<float> gridArea() const;
+    void drawAt (juce::Point<float>, bool connectToLast);
+    void applyShape (int shape);
+
+    BitBuddyProcessor& proc;
+    bb::CustomWave shown {};
+    juce::OwnedArray<juce::TextButton> shapeButtons;
+    int lastStep = -1, lastValue = 0;
+};
+
+//==============================================================================
 /** Draws the ADSR volume shape. */
 class EnvelopeView : public juce::Component, public juce::SettableTooltipClient
 {
@@ -246,6 +271,7 @@ private:
     ParamButtons waveSelector;
     juce::Label waveInfo;
     Scope scope;
+    WaveDrawer waveDrawer;
 
     // 2. shape it
     Knob attack, decay, sustain, release;

@@ -98,6 +98,14 @@ constexpr DrumDef kDrums[12] = {
 constexpr float kDrumEndLevel = 1.0e-3f; // -60 dB
 } // namespace
 
+CustomWave defaultCustomWave()
+{
+    CustomWave w {};
+    for (int i = 0; i < kCustomWaveSteps; ++i)
+        w[(size_t) i] = (std::uint8_t) std::lround (7.5 + 7.5 * std::sin (2.0 * 3.14159265358979 * (i + 0.5) / kCustomWaveSteps));
+    return w;
+}
+
 //==============================================================================
 void ChipEngine::prepare (double newSampleRate)
 {
@@ -843,6 +851,11 @@ float ChipEngine::oscillate (Voice& v) noexcept
 
         // Short-mode LFSR repeats every 93 steps -> clock at 93 x frequency = in tune
         case Wave::Metal: out = noiseStep (v, hz * 93.0, true); break;
+
+        // Your own drawing, played back step by step like the Game Boy (no smoothing: that's the charm)
+        case Wave::Custom:
+            out = (float) p.customWave[(size_t) ((int) (v.phase * kCustomWaveSteps) & (kCustomWaveSteps - 1))] / 7.5f - 1.0f;
+            break;
 
         case Wave::Drums: break;
     }

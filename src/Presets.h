@@ -11,6 +11,7 @@ struct Preset
     const char* name;
     const char* tip;   // one-line playing tip shown in the UI
     std::vector<std::pair<const char*, float>> values;   // parameter id -> real value
+    const char* customWave = nullptr;                     // DRAW presets: 32 hex digits (0-F)
 };
 
 const std::vector<Preset>& factoryPresets();

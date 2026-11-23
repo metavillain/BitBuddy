@@ -106,6 +106,18 @@ public:
     /** The sound no longer matches a saved preset: show its name with a "*". */
     void markRemixed();
 
+    //==========================================================================
+    // Draw your own wave (the DRAW waveform): 32 steps of 0..15
+    int getCustomWaveStep (int index) const noexcept;
+    void setCustomWaveStep (int index, int value) noexcept;
+    void setCustomWave (const bb::CustomWave&) noexcept;
+    bb::CustomWave getCustomWave() const noexcept;
+    /** Call when you finish drawing: tells the DAW the project changed. */
+    void customWaveEdited();
+    /** 32 hex digits, e.g. "89ABCDEF..." - how drawings are saved. */
+    static juce::String customWaveToString (const bb::CustomWave&);
+    static bool customWaveFromString (const juce::String&, bb::CustomWave&);
+
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;   // on-screen keyboard -> synth
     ScopeBuffer scope;
@@ -130,6 +142,8 @@ private:
 
     void rollSection (Section, juce::Random&);
     void setParamValue (const char* id, float realValue);
+
+    std::array<std::atomic<std::uint8_t>, bb::kCustomWaveSteps> customWave {};   // UI writes, audio reads
 
     int currentProgram = 0;
     juce::String customName;

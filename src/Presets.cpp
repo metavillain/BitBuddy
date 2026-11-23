@@ -4,7 +4,7 @@
 namespace bb
 {
 // Choice indices, for readability below
-namespace w   { constexpr float square = 0, pulse25 = 1, pulse12 = 2, triangle = 3, saw = 4, noise = 5, metal = 6, drums = 7; }
+namespace w   { constexpr float square = 0, pulse25 = 1, pulse12 = 2, triangle = 3, saw = 4, noise = 5, metal = 6, drums = 7, draw = 8; }
 namespace am  { constexpr float off = 0, chord = 1, notes = 2; }
 namespace ch  { constexpr float major = 0, minor = 1, power = 2, octave = 3, sus4 = 4, maj7 = 5, min7 = 6, dim = 7, fourth = 8, smart = 9; }
 namespace pat { constexpr float up = 0, down = 1, upDown = 2, random = 3, once = 4; }
@@ -66,6 +66,11 @@ const std::vector<Preset>& factoryPresets()
         { "PWM Strings", "Lush, chorus-y chords. Hold chords down slowly.",
           { { wave, w::square }, { pwm, 0.7f }, { attack, 0.25f }, { decay, 0.6f }, { sustain, 0.8f }, { release, 0.5f },
             { vibDepth, 0.12f }, { vibRate, 5.0f }, { vibDelay, 0.4f }, { echoMix, 0.3f } } },
+
+        { "Game Boy Wave", "A hand-drawn wave, like the Game Boy's wave channel. Pick DRAW and redraw it on the SCREEN!",
+          { { wave, w::draw }, { attack, 0.002f }, { decay, 0.6f }, { sustain, 0.55f }, { release, 0.2f },
+            { vibDepth, 0.2f }, { vibRate, 5.5f }, { vibDelay, 0.25f }, { echoMix, 0.2f }, { echoTime, et::e8d } },
+          "89BCDEEFFFEDCB98AC864211234688A6" },
 
         { "Spooky Triangle", "Haunted-castle vibes. Slow melodies work best.",
           { { wave, w::triangle }, { attack, 0.05f }, { decay, 0.5f }, { sustain, 0.8f }, { release, 0.7f },

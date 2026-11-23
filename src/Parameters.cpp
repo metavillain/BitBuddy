@@ -2,7 +2,7 @@
 
 namespace bb
 {
-juce::StringArray waveNames()       { return { "Square", "Pulse 25%", "Pulse 12.5%", "Triangle", "Saw", "Noise", "Metal Noise", "Drum Kit" }; }
+juce::StringArray waveNames()       { return { "Square", "Pulse 25%", "Pulse 12.5%", "Triangle", "Saw", "Noise", "Metal Noise", "Drum Kit", "Draw" }; }
 juce::StringArray arpModeNames()    { return { "Off", "Chord", "Notes" }; }
 juce::StringArray arpChordNames()   { return { "Major", "Minor", "Power", "Octave", "Sus4", "Major 7", "Minor 7", "Diminished", "Fourth (Coin)", "Smart" }; }
 juce::StringArray arpPatternNames() { return { "Up", "Down", "Up & Down", "Random", "Once" }; }

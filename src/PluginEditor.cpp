@@ -9,9 +9,9 @@ namespace bb
 {
 namespace
 {
-const char* const kWaveShort[8] = { "SQUARE", "PULSE 25", "PULSE 12", "TRIANGLE", "SAW", "NOISE", "METAL", "DRUMS" };
+const char* const kWaveShort[kNumWaves] = { "SQUARE", "PULSE 25", "PULSE 12", "TRIANGLE", "SAW", "NOISE", "METAL", "DRUMS", "DRAW" };
 
-const char* const kWaveInfo[8] = {
+const char* const kWaveInfo[kNumWaves] = {
     "SQUARE (50% pulse): bold, hollow and bright. The workhorse of 8-bit music - great for leads and bass.",
     "PULSE 25%: a thinner, nasal square wave. THE classic NES lead sound.",
     "PULSE 12.5%: very thin and buzzy. Cuts through everything - perfect for arpeggios and sparkly leads.",
@@ -21,6 +21,8 @@ const char* const kWaveInfo[8] = {
     "METAL NOISE: the noise chip's 'short mode' - a buzzy, metallic tone tuned to your keys. Bells, robots, weird FX!",
     "DRUM KIT - every key is a drum!  C Kick,  C# Rim,  D Snare,  D# Clap,  E Snare 2,  F/G/A Toms,  "
     "F# Hi-Hat,  G# Pedal Hat,  A# Open Hat,  B Crash",
+    "DRAW: draw your own wave on the SCREEN, like the Game Boy's wave channel! Smooth shapes sound soft, "
+    "jagged ones buzzy. Try SINE / SAW / RND, then draw over them.",
 };
 
 const char* const kArpTips[3] = {
@@ -66,6 +68,11 @@ float iconSample (int wave, float x)
             const float env = std::exp (-x * 1.6f);
             const float ph = x * (5.0f - x * 1.5f);
             return env * ((ph - std::floor (ph)) < 0.5f ? 1.0f : -1.0f);
+        }
+        case 8:   // a wobbly hand-drawn staircase
+        {
+            static const float steps[8] = { 0.2f, 0.9f, 0.6f, -0.2f, -0.9f, -0.5f, 0.4f, -0.1f };
+            return steps[(int) (f * 8.0f) & 7];
         }
         default: return 0.0f;
     }
@@ -382,6 +389,148 @@ static ParamButtons::Factory waveButtons (juce::Colour accent)
         b->setTooltip (kWaveInfo[i]);
         return b;
     };
+}
+
+//==============================================================================
+WaveDrawer::WaveDrawer (BitBuddyProcessor& p) : proc (p)
+{
+    setTooltip ("DRAW YOUR WAVE: click and drag to draw one cycle of the sound - 32 steps x 16 levels, just like the "
+                "Game Boy's wave channel. Smooth = soft and flute-like, jagged = buzzy and bright.");
+
+    static const char* const names[] = { "SINE", "TRI", "SAW", "SQR", "RND" };
+    static const char* const hints[] = { "SINE: a smooth, round wave - soft and flute-like.",
+                                         "TRI: a triangle - soft, a bit hollow.",
+                                         "SAW: a ramp - bright and brassy.",
+                                         "SQR: a square - bold and hollow.",
+                                         "RND: a random (smooth-ish) wave - every press is a new sound!" };
+    for (int i = 0; i < 5; ++i)
+    {
+        auto* b = shapeButtons.add (new juce::TextButton (names[i]));
+        b->setTooltip (hints[i]);
+        b->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff0b1a14));
+        b->setColour (juce::TextButton::textColourOffId, pal::lime);
+        b->onClick = [this, i] { applyShape (i); };
+        addAndMakeVisible (b);
+    }
+}
+
+void WaveDrawer::resized()
+{
+    auto row = getLocalBounds().removeFromTop (18).removeFromRight (5 * 40).reduced (0, 2);
+    for (auto* b : shapeButtons)
+        b->setBounds (row.removeFromLeft (40).reduced (1, 0));
+}
+
+juce::Rectangle<float> WaveDrawer::gridArea() const
+{
+    return getLocalBounds().toFloat().withTrimmedTop (20.0f).reduced (6.0f, 4.0f);
+}
+
+void WaveDrawer::refresh()
+{
+    const auto now = proc.getCustomWave();
+    if (now != shown)
+    {
+        shown = now;
+        repaint();
+    }
+}
+
+void WaveDrawer::paint (juce::Graphics& g)
+{
+    const auto r = getLocalBounds().toFloat();
+    g.setColour (juce::Colour (0xff0b1a14));
+    g.fillRect (r);
+
+    const auto grid = gridArea();
+    const float colW = grid.getWidth() / kCustomWaveSteps, rowH = grid.getHeight() / 16.0f;
+
+    g.setColour (pal::green.withAlpha (0.12f));
+    for (int c = 0; c <= kCustomWaveSteps; ++c)
+        g.fillRect (grid.getX() + c * colW, grid.getY(), 1.0f, grid.getHeight());
+    for (int row = 0; row <= 16; ++row)
+        g.fillRect (grid.getX(), grid.getY() + row * rowH, grid.getWidth(), 1.0f);
+    g.setColour (pal::green.withAlpha (0.3f));
+    g.fillRect (grid.getX(), grid.getCentreY(), grid.getWidth(), 1.0f);
+
+    // Each step: a soft bar from the middle line, topped by a bright pixel line
+    for (int i = 0; i < kCustomWaveSteps; ++i)
+    {
+        const float x = grid.getX() + i * colW;
+        const float top = grid.getBottom() - (shown[(size_t) i] + 1) * rowH;
+        const float mid = grid.getCentreY();
+        g.setColour (pal::lime.withAlpha (0.25f));
+        g.fillRect (x + 1.0f, juce::jmin (top + rowH, mid), colW - 1.0f, std::abs (mid - (top + rowH)));
+        g.setColour (pal::lime);
+        g.fillRect (x, top + rowH * 0.5f - 1.5f, colW, 3.0f);
+    }
+
+    g.setColour (pal::green);
+    g.setFont (pixelFont (6.0f));
+    g.drawText ("CLICK + DRAG", r.withHeight (18.0f).withTrimmedLeft (6.0f), juce::Justification::centredLeft);
+}
+
+void WaveDrawer::drawAt (juce::Point<float> pos, bool connectToLast)
+{
+    const auto grid = gridArea();
+    const int step = juce::jlimit (0, kCustomWaveSteps - 1, (int) ((pos.x - grid.getX()) / grid.getWidth() * kCustomWaveSteps));
+    const int value = juce::jlimit (0, 15, (int) std::floor ((grid.getBottom() - pos.y) / grid.getHeight() * 16.0f));
+
+    if (connectToLast && lastStep >= 0 && lastStep != step)
+    {
+        // Fill in the steps a fast mouse skipped over
+        const int dir = step > lastStep ? 1 : -1;
+        for (int s = lastStep + dir; s != step; s += dir)
+            proc.setCustomWaveStep (s, juce::roundToInt (juce::jmap ((float) (s - lastStep), 0.0f, (float) (step - lastStep),
+                                                                     (float) lastValue, (float) value)));
+    }
+    proc.setCustomWaveStep (step, value);
+    lastStep = step;
+    lastValue = value;
+    refresh();
+}
+
+void WaveDrawer::mouseDown (const juce::MouseEvent& e)
+{
+    if (gridArea().expanded (4.0f).contains (e.position))
+        drawAt (e.position, false);
+}
+
+void WaveDrawer::mouseDrag (const juce::MouseEvent& e)
+{
+    if (lastStep >= 0)
+        drawAt (e.position, true);
+}
+
+void WaveDrawer::mouseUp (const juce::MouseEvent&)
+{
+    if (lastStep >= 0)
+        proc.customWaveEdited();
+    lastStep = -1;
+}
+
+void WaveDrawer::applyShape (int shape)
+{
+    CustomWave w {};
+    juce::Random rng;
+    float walk = 7.5f;
+    for (int i = 0; i < kCustomWaveSteps; ++i)
+    {
+        const float x = (i + 0.5f) / kCustomWaveSteps;
+        float v = 0.0f;
+        switch (shape)
+        {
+            case 0:  v = 7.5f + 7.5f * std::sin (juce::MathConstants<float>::twoPi * x); break;
+            case 1:  v = x < 0.5f ? 15.0f * 2.0f * x : 15.0f * (2.0f - 2.0f * x); break;
+            case 2:  v = 15.0f * x; break;
+            case 3:  v = x < 0.5f ? 15.0f : 0.0f; break;
+            default: walk = juce::jlimit (0.0f, 15.0f, walk + (rng.nextFloat() - 0.5f) * 7.0f); v = walk; break;
+        }
+        w[(size_t) i] = (std::uint8_t) juce::jlimit (0, 15, juce::roundToInt (v));
+    }
+    proc.setCustomWave (w);
+    proc.customWaveEdited();
+    refresh();
 }
 
 //==============================================================================
@@ -742,8 +891,9 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     : proc (p),
       state (p.apvts),
       diceSound (pal::yellow), diceShape (pal::lime), diceChords (pal::cyan), diceMovement (pal::orange), diceCrunch (pal::sky),
-      waveSelector (*state.getParameter (ids::wave), 8, waveButtons (pal::yellow), false, 3),
+      waveSelector (*state.getParameter (ids::wave), kNumWaves, waveButtons (pal::yellow), false, 3),
       scope (p.scope),
+      waveDrawer (p),
       attack  (state, ids::attack,  "ATTACK",  pal::lime, "ATTACK: how quickly a note fades in. Low = instant 'blip', high = slow swell."),
       decay   (state, ids::decay,   "DECAY",   pal::lime, "DECAY: how fast the note falls from its loudest point down to the Sustain level."),
       sustain (state, ids::sustain, "SUSTAIN", pal::lime, "SUSTAIN: the volume a note holds while you keep the key down. 0% = every note is a short blip."),
@@ -848,6 +998,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     waveInfo.setJustificationType (juce::Justification::topLeft);
     addAndMakeVisible (waveInfo);
     addAndMakeVisible (scope);
+    addChildComponent (waveDrawer);
 
     // --- 2. shape it ---
     for (auto* k : { &attack, &decay, &sustain, &release })
@@ -1035,7 +1186,7 @@ void MainPanel::paint (juce::Graphics& g)
     g.drawText ("8-BIT CHIPTUNE SYNTH", 18, 44, 210, 12, juce::Justification::left);
 
     drawSection (g, s1, "1", "PICK A SOUND", pal::yellow);
-    drawSection (g, sScope, {}, "SCREEN", pal::green);
+    drawSection (g, sScope, {}, lastWave == (int) Wave::Custom ? "SCREEN: DRAW YOUR WAVE!" : "SCREEN", pal::green);
     drawSection (g, s2, "2", "SHAPE IT  (VOLUME ENVELOPE)", pal::lime);
     drawSection (g, s3, "3", "MAGIC CHORDS  (ARPEGGIATOR)", pal::cyan);
     drawSection (g, s4, "4", "ADD MOVEMENT", pal::orange);
@@ -1071,6 +1222,7 @@ void MainPanel::resized()
     waveSelector.setBounds (17, 90, 586, 86);
     waveInfo.setBounds (18, 180, 584, 48);
     scope.setBounds (630, 90, 350, 132);
+    waveDrawer.setBounds (scope.getBounds());
 
     s2 = { 10, 238, 470, 150 };
     int x = 20;
@@ -1137,13 +1289,21 @@ void MainPanel::timerCallback()
     envelopeView.refresh();
     filterBox.refresh();
 
-    const int wave = juce::jlimit (0, 7, juce::roundToInt (state.getRawParameterValue (ids::wave)->load()));
+    const int wave = juce::jlimit (0, kNumWaves - 1, juce::roundToInt (state.getRawParameterValue (ids::wave)->load()));
     if (wave != lastWave)
     {
         lastWave = wave;
         waveInfo.setText (kWaveInfo[wave], juce::dontSendNotification);
-        keyboard.setDrumMode (wave == 7);
+        keyboard.setDrumMode (wave == (int) Wave::Drums);
+
+        // DRAW turns the screen into a drawing board
+        const bool drawing = wave == (int) Wave::Custom;
+        scope.setVisible (! drawing);
+        waveDrawer.setVisible (drawing);
+        repaint (sScope);
     }
+    if (waveDrawer.isVisible())
+        waveDrawer.refresh();
 
     const int arpMode = juce::jlimit (0, 2, juce::roundToInt (state.getRawParameterValue (ids::arpMode)->load()));
     if (arpMode != lastArpMode)

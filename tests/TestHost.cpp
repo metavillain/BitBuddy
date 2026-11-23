@@ -303,7 +303,7 @@ static int runTests (const String& path)
         automatable += prm->isAutomatable() ? 1 : 0;
     res.check (automatable >= 30 && automatable <= 32, "Automatable parameters in the DAW",
                String (automatable) + " (+" + String (plugin->getParameters().size() - automatable) + " hidden MIDI-CC slots)");
-    res.check (plugin->getNumPrograms() == 23, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
+    res.check (plugin->getNumPrograms() == 24, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
 
     // ---- 2. Every preset makes sound, stays finite, and goes silent --------
     std::cout << "\n  -- every preset: sound / no NaN / no clipping / no stuck notes --\n";
@@ -337,8 +337,10 @@ static int runTests (const String& path)
     std::cout << "\n  -- tuning (autocorrelation pitch, tolerance +/- 8 cents) --\n";
     struct PitchCase { const char* wave; float waveNorm; int note; };
     const PitchCase pitchCases[] = {
-        { "Square",      0.0f / 7.0f, 69 }, { "Pulse 25%", 1.0f / 7.0f, 57 }, { "Pulse 12.5%", 2.0f / 7.0f, 72 },
-        { "Triangle",    3.0f / 7.0f, 45 }, { "Saw",       4.0f / 7.0f, 64 }, { "Metal Noise", 6.0f / 7.0f, 69 },
+        // Wave has 9 choices (0..8): normalised value = index / 8
+        { "Square",      0.0f / 8.0f, 69 }, { "Pulse 25%", 1.0f / 8.0f, 57 }, { "Pulse 12.5%", 2.0f / 8.0f, 72 },
+        { "Triangle",    3.0f / 8.0f, 45 }, { "Saw",       4.0f / 8.0f, 64 }, { "Metal Noise", 6.0f / 8.0f, 69 },
+        { "Draw (sine)", 8.0f / 8.0f, 69 },
     };
     for (const auto& pc : pitchCases)
     {
@@ -644,7 +646,7 @@ static int runTests (const String& path)
 
         selectProgram (*plugin, "Hero Lead");
         pump();
-        setParam (*plugin, "Wave", 3.0f / 7.0f);
+        setParam (*plugin, "Wave", 3.0f / 8.0f);
         setParam (*plugin, "Attack", 0.42f);
         setParam (*plugin, "Echo", 0.33f);
         pump();
@@ -764,6 +766,57 @@ static int runTests (const String& path)
                        && m0.at ("scale") == m1.at ("scale") && m0.at ("volume") == m1.at ("volume");
         res.check (kept && moved >= 8 && biggest <= 0.37f, "MUTATE: nudges many knobs a little, keeps wave/Key/Scale/volume",
                    String (moved) + " params moved, biggest knob change " + String (roundToInt (biggest * 100.0f)) + "% (3 mutates)");
+
+        // DRAW: your drawing is saved with the project and in your presets, and plays in tune
+        bb::CustomWave saw {};
+        for (int i = 0; i < bb::kCustomWaveSteps; ++i)
+            saw[(size_t) i] = (std::uint8_t) (i / 2);
+        proc.selectPreset (0);
+        set ("wave", 8.0f);
+        proc.setCustomWave (saw);
+        MemoryBlock project;
+        proc.getStateInformation (project);
+        proc.setCustomWave (bb::defaultCustomWave());
+        proc.setStateInformation (project.getData(), (int) project.getSize());
+        const bool projectOk = proc.getCustomWave() == saw;
+
+        const String drawName = "zz BitBuddy draw test " + String (Time::currentTimeMillis());
+        proc.saveUserPreset (drawName);
+        proc.setCustomWave (bb::defaultCustomWave());
+        proc.loadUserPreset (drawName);
+        const bool presetOk = proc.getCustomWave() == saw;
+        BitBuddyProcessor::getUserPresetFolder().getChildFile (drawName + ".bbpreset").deleteFile();
+
+        proc.selectPreset (0);
+        const bool keptByPlainPreset = proc.getCustomWave() == saw;   // presets without a drawing leave yours alone
+        int gameBoy = -1;
+        for (int i = 0; i < proc.getNumPrograms(); ++i)
+            if (proc.getProgramName (i) == "Game Boy Wave")
+                gameBoy = i;
+        proc.selectPreset (gameBoy);
+        const bool presetDrawingLoaded = BitBuddyProcessor::customWaveToString (proc.getCustomWave()) == "89BCDEEFFFEDCB98AC864211234688A6";
+
+        // Play the saw drawing at A4 through BitBuddy's own processor
+        proc.selectPreset (0);
+        set ("wave", 8.0f);
+        proc.setCustomWave (saw);
+        proc.prepareToPlay (sr, 512);
+        AudioBuffer<float> out (2, (int) sr), block (2, 512);
+        for (int pos = 0; pos + 512 <= out.getNumSamples(); pos += 512)
+        {
+            MidiBuffer midi;
+            if (pos == 0)
+                midi.addEvent (MidiMessage::noteOn (1, 69, 0.8f), 0);
+            block.clear();
+            proc.processBlock (block, midi);
+            out.copyFrom (0, pos, block, 0, 0, 512);
+        }
+        const double hz = pitchAt (out, 0.3, 8192, sr, 40.0);
+        res.check (projectOk && presetOk && keptByPlainPreset && presetDrawingLoaded && std::abs (centsOff (hz, 440.0)) < 8.0,
+                   "DRAW: drawing saved in project + preset, preset drawings load, plays in tune",
+                   String (projectOk ? "project ok" : "PROJECT LOST") + ", " + (presetOk ? "preset ok" : "PRESET LOST") + ", "
+                       + (keptByPlainPreset ? "kept" : "OVERWRITTEN") + ", " + (presetDrawingLoaded ? "GB ok" : "GB WRONG")
+                       + ", A4 = " + String (hz, 2) + " Hz");
     }
 
     std::cout << "\n  " << res.passed << " passed, " << res.failed << " failed\n";
@@ -1020,6 +1073,7 @@ static int runSnapshot (const File& outDir)
         { "Major Chord Arp", { 60 },         "ui-chord-arp.png",   false },
         { "Smart Chords",    { 62 },         "ui-scale-lock.png",  false, 9, 4 },   // A minor pentatonic
         { "C64 Squelch Bass", { 40 },        "ui-filter.png",      false },
+        { "Game Boy Wave",   { 69 },         "ui-draw-wave.png",   false },
         { "Drum Kit",        { 36, 42 },     "ui-drum-kit.png",    false },
         { "Classic Square",  {},             "ui-help.png",        true  },
     };

@@ -19,7 +19,14 @@
 // =============================================================================
 namespace bb
 {
-enum class Wave : int { Square = 0, Pulse25, Pulse12, Triangle, Saw, Noise, Metal, Drums };
+enum class Wave : int { Square = 0, Pulse25, Pulse12, Triangle, Saw, Noise, Metal, Drums, Custom };
+constexpr int kNumWaves = 9;
+
+// "Draw your own wave": one cycle as 32 steps of 0..15, exactly like the
+// Game Boy's wave channel (its 32-sample, 4-bit "wave RAM").
+constexpr int kCustomWaveSteps = 32;
+using CustomWave = std::array<std::uint8_t, kCustomWaveSteps>;
+CustomWave defaultCustomWave();   // a 4-bit sine
 enum class ArpMode : int { Off = 0, Chord, Notes };
 enum class ArpPattern : int { Up = 0, Down, UpDown, Random, Once };
 
@@ -42,6 +49,8 @@ struct EngineParams
     int scaleKey = 0;                                          // 0 = C ... 11 = B
     Scale scale = Scale::Off;
     bool smartChords = false;                                  // CHORD mode picks the chord from the scale
+
+    CustomWave customWave = defaultCustomWave();               // for Wave::Custom
 };
 
 class ChipEngine
