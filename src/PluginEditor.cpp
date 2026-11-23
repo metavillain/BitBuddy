@@ -234,11 +234,39 @@ void DiceButton::paintButton (juce::Graphics& g, bool over, bool down)
 }
 
 //==============================================================================
-Box::Box (const juce::String& numberText, const juce::String& titleText, juce::Colour c)
-    : accent (c), number (numberText), title (titleText), dice (c)
+HideButton::HideButton() : juce::Button ("HIDE")
+{
+    setTooltip ("HIDE this box (it keeps working). Bring it back from VIEW at the top.");
+}
+
+void HideButton::paintButton (juce::Graphics& g, bool over, bool down)
+{
+    auto r = getLocalBounds().toFloat().reduced (2.0f).translated (0.0f, down ? 1.0f : 0.0f);
+    g.setColour (over ? pal::red : pal::grey);
+    const float s = juce::jmax (2.0f, std::floor (r.getWidth() / 7.0f));
+    for (int i = 0; i < 5; ++i)   // a chunky pixel "x"
+    {
+        const float o = (float) i * (r.getWidth() - s) / 4.0f;
+        g.fillRect (r.getX() + o, r.getY() + o, s, s);
+        g.fillRect (r.getRight() - s - o, r.getY() + o, s, s);
+    }
+}
+
+Box::Box (const juce::String& boxId, const juce::String& numberText, const juce::String& titleText, juce::Colour c,
+          int w, int h)
+    : accent (c), id (boxId), number (numberText), title (titleText), naturalWidth (w), naturalHeight (h), dice (c)
 {
     dice.onClick = [this] { if (onDice != nullptr) onDice(); };
-    addAndMakeVisible (dice);
+    addChildComponent (dice);
+    hide.onClick = [this] { if (onHide != nullptr) onHide (*this); };
+    addAndMakeVisible (hide);
+}
+
+void Box::setDice (std::function<void()> roll)
+{
+    onDice = std::move (roll);
+    dice.setVisible (onDice != nullptr);
+    resized();
 }
 
 void Box::paint (juce::Graphics& g)
@@ -248,8 +276,36 @@ void Box::paint (juce::Graphics& g)
 
 void Box::resized()
 {
+    const bool hasDice = onDice != nullptr;
     dice.setBounds (getWidth() - 26, 5, 18, 18);
+    hide.setBounds (getWidth() - (hasDice ? 46 : 26), 5, 18, 18);
     layoutContent (getLocalBounds().reduced (8, 6).withTrimmedTop (20));
+}
+
+// Drag a box by its title bar to move it
+void Box::mouseDown (const juce::MouseEvent& e)
+{
+    dragging = e.eventComponent == this && e.y < headerHeight;
+    if (dragging && onDragStart != nullptr)
+        onDragStart (*this, e);
+}
+
+void Box::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragging && onDragMove != nullptr)
+        onDragMove (*this, e);
+}
+
+void Box::mouseUp (const juce::MouseEvent& e)
+{
+    if (dragging && onDragEnd != nullptr)
+        onDragEnd (*this, e);
+    dragging = false;
+}
+
+void Box::mouseMove (const juce::MouseEvent& e)
+{
+    setMouseCursor (e.y < headerHeight ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
 }
 
 //==============================================================================
@@ -315,7 +371,7 @@ void FilterCurve::paint (juce::Graphics& g)
 
 //==============================================================================
 FilterBox::FilterBox (juce::AudioProcessorValueTreeState& state)
-    : Box ("6", "C64 FILTER  (SQUELCH!)", filterAccent()),
+    : Box ("filter", "6", "C64 FILTER  (SQUELCH!)", filterAccent(), 480, 112),
       typeButtons (*state.getParameter (ids::filterType), 4,
                    textButtons ({ "OFF", "LOW", "BAND", "HIGH" },
                                 { "FILTER OFF: the raw chip sound, nothing filtered.",
@@ -1258,7 +1314,14 @@ void HelpOverlay::paint (juce::Graphics& g)
 MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     : proc (p),
       state (p.apvts),
-      diceSound (pal::yellow), diceShape (pal::lime), diceChords (pal::cyan), diceMovement (pal::orange), diceCrunch (pal::sky),
+      soundBox    ("sound",    "1", "PICK A SOUND",                 pal::yellow, 600, 168),
+      screenBox   ("screen",   {},  "SCREEN",                       pal::green,  370, 168),
+      shapeBox    ("shape",    "2", "SHAPE IT  (VOLUME ENVELOPE)",  pal::lime,   470, 150),
+      chordsBox   ("chords",   "3", "MAGIC CHORDS  (ARPEGGIATOR)",  pal::cyan,   500, 150),
+      movementBox ("movement", "4", "ADD MOVEMENT",                 pal::orange, 560, 150),
+      crunchBox   ("crunch",   "5", "CRUNCH + ECHO",                pal::sky,    410, 150),
+      playBox     ("play",     {},  p.isStandaloneApp() ? "PLAY ALONG  (KEY, SCALE, JAM, REC)" : "PLAY ALONG  (KEY + SCALE)",
+                   pal::pink, 490, 112),
       waveSelector (*state.getParameter (ids::wave), kNumWaves, waveButtons (pal::yellow), false, 3),
       scope (p.scope),
       waveDrawer (p),
@@ -1347,21 +1410,15 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     presetTip.setFont (textFont (14.0f));
     presetTip.setColour (juce::Label::textColourId, pal::light);
 
-    for (auto* c : { (juce::Component*) &helpButton, (juce::Component*) &prevButton, (juce::Component*) &nextButton,
-                     (juce::Component*) &saveButton, (juce::Component*) &mutateButton,
+    viewButton.setTooltip ("VIEW: show or hide BitBuddy's boxes, or reset the layout. Tip: drag any box by its "
+                           "title bar to move it somewhere else!");
+    viewButton.setColour (juce::TextButton::buttonColourId, pal::navy);
+    viewButton.onClick = [this] { showViewMenu(); };
+
+    for (auto* c : { (juce::Component*) &helpButton, (juce::Component*) &viewButton, (juce::Component*) &prevButton,
+                     (juce::Component*) &nextButton, (juce::Component*) &saveButton, (juce::Component*) &mutateButton,
                      (juce::Component*) &surpriseButton, (juce::Component*) &presetBox, (juce::Component*) &presetTip })
         addAndMakeVisible (c);
-
-    // --- dice: one per section ---
-    using Section = BitBuddyProcessor::Section;
-    const std::pair<DiceButton*, Section> dice[] = { { &diceSound, Section::Sound }, { &diceShape, Section::Shape },
-                                                      { &diceChords, Section::Chords }, { &diceMovement, Section::Movement },
-                                                      { &diceCrunch, Section::Crunch } };
-    for (auto [button, section] : dice)
-    {
-        button->onClick = [this, section = section] { proc.rollSection (section); };
-        addAndMakeVisible (button);
-    }
 
     // --- 1. pick a sound ---
     addAndMakeVisible (waveSelector);
@@ -1435,9 +1492,6 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
                 pal::sky);
     echoTimeAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, ids::echoTime, echoTimeBox);
 
-    // --- 6. C64 filter ---
-    filterBox.onDice = [this] { proc.rollSection (BitBuddyProcessor::Section::Filter); };
-    addAndMakeVisible (filterBox);
 
     // --- play along: Scale Lock ---
     setupCombo (keyBox, keyLabel, "KEY", keyNames(),
@@ -1526,6 +1580,120 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
         addAndMakeVisible (appOnlyNote);
     }
 
+    // --- put every control into its box (positions are inside the box) ---
+    auto into = [] (juce::Component& box, std::initializer_list<juce::Component*> parts)
+    {
+        for (auto* c : parts)
+            box.addChildComponent (c);   // moves it into the box, keeping it shown or hidden as it was
+    };
+    into (soundBox,    { &waveSelector, &waveInfo, &consoleLabel, &consoleBox });
+    into (screenBox,   { &scope, &waveDrawer, &macroEditor, &scopeViewButton, &waveViewButton, &macroViewButton });
+    into (shapeBox,    { &attack, &decay, &sustain, &release, &envelopeView });
+    into (chordsBox,   { &arpModeButtons, &chordLabel, &chordBox, &patternLabel, &patternBox, &speedLabel, &speedBox,
+                         &arpTip, &octaves });
+    into (movementBox, { &vibDepth, &vibRate, &vibDelay, &sweepAmt, &sweepTime, &pwm, &glide, &voiceModeButtons });
+    into (crunchBox,   { &bits, &rate, &echoMix, &echoTimeLabel, &echoTimeBox, &echoFeedback, &volume });
+    into (playBox,     { &keyLabel, &keyBox, &scaleLabel, &scaleBox, &scaleTip, &jamButton, &jamStyleBox, &tempoDownButton,
+                         &tempoLabel, &tempoUpButton, &recordButton, &recordStatus, &showRecordingButton, &appOnlyNote });
+
+    soundBox.layout = [this]
+    {
+        waveSelector.setBounds (7, 26, 586, 86);
+        waveInfo.setBounds (8, 116, 584, 48);
+        consoleLabel.setBounds (392, 7, 36, 12);
+        consoleBox.setBounds (428, 3, 112, 20);
+    };
+    screenBox.layout = [this]
+    {
+        const juce::Rectangle<int> view (10, 26, screenBox.getWidth() - 20, screenBox.getHeight() - 36);
+        scope.setBounds (view);
+        waveDrawer.setBounds (view);
+        macroEditor.setBounds (view);
+        const int right = screenBox.getWidth() - 32;
+        macroViewButton.setBounds (right - 78, 3, 78, 18);
+        waveViewButton.setBounds (right - 128, 3, 48, 18);
+        scopeViewButton.setBounds (right - 184, 3, 54, 18);
+    };
+    shapeBox.layout = [this]
+    {
+        int x = 10;
+        for (auto* k : { &attack, &decay, &sustain, &release })
+        {
+            k->setBounds (x, 24, 66, 118);
+            x += 68;
+        }
+        envelopeView.setBounds (286, 28, 174, 110);
+    };
+    chordsBox.layout = [this]
+    {
+        arpModeButtons.setBounds (8, 26, 404, 30);
+        chordLabel.setBounds (10, 62, 140, 12);
+        chordBox.setBounds (10, 76, 140, 26);
+        patternLabel.setBounds (160, 62, 120, 12);
+        patternBox.setBounds (160, 76, 120, 26);
+        speedLabel.setBounds (290, 62, 120, 12);
+        speedBox.setBounds (290, 76, 120, 26);
+        arpTip.setBounds (8, 108, 404, 36);
+        octaves.setBounds (424, 24, 66, 118);
+    };
+    movementBox.layout = [this]
+    {
+        int x = 8;
+        for (auto* k : { &vibDepth, &vibRate, &vibDelay, &sweepAmt, &sweepTime, &pwm, &glide })
+        {
+            k->setBounds (x, 24, 66, 118);
+            x += 66;
+        }
+        voiceModeButtons.setBounds (478, 32, 72, 88);
+    };
+    crunchBox.layout = [this]
+    {
+        bits.setBounds (8, 24, 62, 118);
+        rate.setBounds (70, 24, 62, 118);
+        echoMix.setBounds (132, 24, 62, 118);
+        echoTimeLabel.setBounds (198, 32, 76, 12);
+        echoTimeBox.setBounds (198, 48, 76, 26);
+        echoFeedback.setBounds (278, 24, 62, 118);
+        volume.setBounds (342, 24, 62, 118);
+    };
+    playBox.layout = [this]
+    {
+        keyLabel.setBounds (10, 28, 70, 12);
+        keyBox.setBounds (10, 42, 70, 26);
+        scaleLabel.setBounds (90, 28, 140, 12);
+        scaleBox.setBounds (90, 42, 140, 26);
+        scaleTip.setBounds (240, 26, 244, 46);
+        jamButton.setBounds (10, 78, 62, 26);
+        jamStyleBox.setBounds (76, 80, 100, 22);
+        tempoDownButton.setBounds (180, 78, 18, 26);
+        tempoLabel.setBounds (198, 78, 58, 26);
+        tempoUpButton.setBounds (256, 78, 18, 26);
+        recordButton.setBounds (280, 78, 64, 26);
+        recordStatus.setBounds (346, 78, 74, 26);
+        showRecordingButton.setBounds (422, 78, 60, 26);
+        appOnlyNote.setBounds (10, 76, 472, 30);
+    };
+
+    using Section = BitBuddyProcessor::Section;
+    soundBox.setDice    ([this] { proc.rollSection (Section::Sound); });
+    shapeBox.setDice    ([this] { proc.rollSection (Section::Shape); });
+    chordsBox.setDice   ([this] { proc.rollSection (Section::Chords); });
+    movementBox.setDice ([this] { proc.rollSection (Section::Movement); });
+    crunchBox.setDice   ([this] { proc.rollSection (Section::Crunch); });
+    filterBox.setDice   ([this] { proc.rollSection (Section::Filter); });
+
+    // Boxes can be hidden (their "x") and moved (drag the title bar)
+    allBoxes = { &soundBox, &screenBox, &shapeBox, &chordsBox, &movementBox, &crunchBox, &filterBox, &playBox };
+    for (auto* box : allBoxes)
+    {
+        box->onHide = [this] (Box& b) { setBoxVisible (b.getId(), false); };
+        box->onDragStart = [] (Box& b, const juce::MouseEvent&) { b.toFront (false); b.setAlpha (0.8f); };
+        box->onDragMove = [this] (Box& b, const juce::MouseEvent& e) { dragBoxTo (b, e.getEventRelativeTo (this).getPosition()); };
+        box->onDragEnd = [this] (Box& b, const juce::MouseEvent&) { b.setAlpha (1.0f); saveLayout(); };
+        addAndMakeVisible (box);
+    }
+    loadLayout();
+
     // --- bottom ---
     hintLabel.setFont (textFont (15.0f));
     hintLabel.setColour (juce::Label::textColourId, pal::white);
@@ -1546,7 +1714,9 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     addMouseListener (this, true);
     setLookAndFeel (&lookAndFeel);   // (re)creates slider / combo text boxes...
     stopFocusStealing (*this);       // ...so do this afterwards
-    setSize (baseWidth, baseHeight);
+    setSize (baseWidth, fullHeight);
+    layoutBoxes();
+    setSize (baseWidth, designHeight);
     startTimerHz (30);
 }
 
@@ -1625,11 +1795,6 @@ void MainPanel::setupCombo (juce::ComboBox& box, juce::Label& label, const juce:
     addAndMakeVisible (label);
 }
 
-void MainPanel::drawSection (juce::Graphics& g, juce::Rectangle<int> r, const juce::String& number,
-                             const juce::String& title, juce::Colour accent)
-{
-    drawBoxFrame (g, r, number, title, accent);
-}
 
 void MainPanel::paint (juce::Graphics& g)
 {
@@ -1652,14 +1817,6 @@ void MainPanel::paint (juce::Graphics& g)
     g.setFont (pixelFont (8.0f));
     g.drawText ("8-BIT CHIPTUNE SYNTH", 18, 44, 210, 12, juce::Justification::left);
 
-    drawSection (g, s1, "1", "PICK A SOUND", pal::yellow);
-    drawSection (g, sScope, {}, "SCREEN", pal::green);
-    drawSection (g, s2, "2", "SHAPE IT  (VOLUME ENVELOPE)", pal::lime);
-    drawSection (g, s3, "3", "MAGIC CHORDS  (ARPEGGIATOR)", pal::cyan);
-    drawSection (g, s4, "4", "ADD MOVEMENT", pal::orange);
-    drawSection (g, s5, "5", "CRUNCH + ECHO", pal::sky);
-    drawSection (g, sPlay, {}, proc.isStandaloneApp() ? "PLAY ALONG  (KEY, SCALE, JAM, REC)" : "PLAY ALONG  (KEY + SCALE)", pal::pink);
-
     // Hint bar
     g.setColour (pal::navy);
     g.fillRect (hintArea);
@@ -1675,8 +1832,9 @@ void MainPanel::paint (juce::Graphics& g)
 
 void MainPanel::resized()
 {
-    helpButton.setBounds (240, 12, 92, 30);
-    mascot.setBounds (376, 4, 48, 52);
+    helpButton.setBounds (240, 12, 72, 30);
+    viewButton.setBounds (316, 12, 58, 30);
+    mascot.setBounds (378, 4, 48, 52);
     prevButton.setBounds (430, 12, 30, 30);
     presetBox.setBounds (464, 12, 206, 28);
     nextButton.setBounds (674, 12, 30, 30);
@@ -1685,85 +1843,216 @@ void MainPanel::resized()
     surpriseButton.setBounds (864, 12, 126, 30);
     presetTip.setBounds (430, 42, 560, 18);
 
-    s1 = { 10, 64, 600, 168 };
-    sScope = { 620, 64, 370, 168 };
-    waveSelector.setBounds (17, 90, 586, 86);
-    waveInfo.setBounds (18, 180, 584, 48);
-    scope.setBounds (630, 90, 350, 132);
-    waveDrawer.setBounds (scope.getBounds());
-    macroEditor.setBounds (scope.getBounds());
-    scopeViewButton.setBounds (796, 67, 54, 18);
-    waveViewButton.setBounds (852, 67, 48, 18);
-    macroViewButton.setBounds (902, 67, 78, 18);
-    consoleLabel.setBounds (426, 71, 36, 12);
-    consoleBox.setBounds (462, 67, 112, 20);
+    layoutBoxes();
+}
 
-    s2 = { 10, 238, 470, 150 };
-    int x = 20;
-    for (auto* k : { &attack, &decay, &sustain, &release })
+//==============================================================================
+// Layout: the boxes flow into rows (in your order), and each row is stretched
+// to the full width so the edges stay tidy. Hidden boxes take no space.
+namespace
+{
+juce::StringArray defaultBoxOrder()
+{
+    return { "sound", "screen", "shape", "chords", "movement", "crunch", "filter", "play" };
+}
+} // namespace
+
+void MainPanel::layoutBoxes()
+{
+    constexpr int left = 10, right = 990, gap = 10, rowGap = 6;
+    int y = 64, rowWidth = 0;
+    std::vector<Box*> row;
+
+    auto placeRow = [&]
     {
-        k->setBounds (x, 262, 66, 118);
-        x += 68;
-    }
-    envelopeView.setBounds (296, 266, 174, 110);
+        if (row.empty())
+            return;
+        int natural = 0, rowHeight = 0;
+        for (auto* b : row)
+        {
+            natural += b->getNaturalWidth();
+            rowHeight = juce::jmax (rowHeight, b->getNaturalHeight());
+        }
+        const int space = (right - left) - gap * ((int) row.size() - 1);
+        int x = left;
+        for (size_t i = 0; i < row.size(); ++i)
+        {
+            const int w = i + 1 == row.size() ? right - x
+                                              : juce::roundToInt ((double) row[i]->getNaturalWidth() * space / natural);
+            row[i]->setBounds (x, y, w, rowHeight);
+            x += w + gap;
+        }
+        y += rowHeight + rowGap;
+        row.clear();
+        rowWidth = 0;
+    };
 
-    s3 = { 490, 238, 500, 150 };
-    arpModeButtons.setBounds (498, 264, 404, 30);
-    chordLabel.setBounds (500, 300, 140, 12);
-    chordBox.setBounds (500, 314, 140, 26);
-    patternLabel.setBounds (650, 300, 120, 12);
-    patternBox.setBounds (650, 314, 120, 26);
-    speedLabel.setBounds (780, 300, 120, 12);
-    speedBox.setBounds (780, 314, 120, 26);
-    arpTip.setBounds (498, 346, 404, 36);
-    octaves.setBounds (914, 262, 66, 118);
-
-    s4 = { 10, 394, 560, 150 };
-    x = 18;
-    for (auto* k : { &vibDepth, &vibRate, &vibDelay, &sweepAmt, &sweepTime, &pwm, &glide })
+    for (const auto& id : boxOrder)
     {
-        k->setBounds (x, 418, 66, 118);
-        x += 66;
+        auto* box = findBox (id);
+        if (box == nullptr)
+            continue;
+        const bool show = ! hiddenBoxes.contains (id);
+        box->setVisible (show);
+        if (! show)
+            continue;
+        if (! row.empty() && rowWidth + gap + box->getNaturalWidth() > right - left)
+            placeRow();
+        rowWidth += (row.empty() ? 0 : gap) + box->getNaturalWidth();
+        row.push_back (box);
     }
-    voiceModeButtons.setBounds (488, 426, 72, 88);
+    placeRow();
 
-    s5 = { 580, 394, 410, 150 };
-    bits.setBounds (588, 418, 62, 118);
-    rate.setBounds (650, 418, 62, 118);
-    echoMix.setBounds (712, 418, 62, 118);
-    echoTimeLabel.setBounds (778, 426, 76, 12);
-    echoTimeBox.setBounds (778, 442, 76, 26);
-    echoFeedback.setBounds (858, 418, 62, 118);
-    volume.setBounds (922, 418, 62, 118);
-
-    // dice in each numbered section's top-right corner
-    const std::pair<DiceButton*, juce::Rectangle<int>> dice[] = { { &diceSound, s1 }, { &diceShape, s2 }, { &diceChords, s3 },
-                                                                   { &diceMovement, s4 }, { &diceCrunch, s5 } };
-    for (auto [button, section] : dice)
-        button->setBounds (section.getRight() - 26, section.getY() + 5, 18, 18);
-
-    filterBox.setBounds (10, 550, 480, 112);
-    sPlay = { 500, 550, 490, 112 };
-    keyLabel.setBounds (510, 578, 70, 12);
-    keyBox.setBounds (510, 592, 70, 26);
-    scaleLabel.setBounds (590, 578, 140, 12);
-    scaleBox.setBounds (590, 592, 140, 26);
-    scaleTip.setBounds (740, 576, 244, 46);
-    jamButton.setBounds (510, 628, 62, 26);
-    jamStyleBox.setBounds (576, 630, 100, 22);
-    tempoDownButton.setBounds (680, 628, 18, 26);
-    tempoLabel.setBounds (698, 628, 58, 26);
-    tempoUpButton.setBounds (756, 628, 18, 26);
-    recordButton.setBounds (780, 628, 64, 26);
-    recordStatus.setBounds (846, 628, 74, 26);
-    showRecordingButton.setBounds (922, 628, 60, 26);
-    appOnlyNote.setBounds (510, 626, 472, 30);
-
-    hintArea = { 10, 668, 980, 28 };
+    // The hint bar and the keyboard sit under the boxes
+    hintArea = { 10, y, 980, 28 };
     hintLabel.setBounds (hintArea.reduced (2).withTrimmedLeft (26).withTrimmedRight (176));
     keysStatus.setBounds (hintArea.getRight() - 176, hintArea.getY() + 2, 172, hintArea.getHeight() - 4);
-    keyboard.setBounds (10, 702, 980, 70);
-    help.setBounds (getLocalBounds());
+    keyboard.setBounds (10, y + 34, 980, 70);
+    const int newHeight = y + 34 + 70 + 6;
+    help.setBounds (0, 0, baseWidth, newHeight);
+    repaint();
+
+    if (newHeight != designHeight)
+    {
+        designHeight = newHeight;
+        if (onDesignHeightChanged != nullptr)
+            onDesignHeightChanged();
+    }
+}
+
+Box* MainPanel::findBox (const juce::String& id) const
+{
+    for (auto* b : allBoxes)
+        if (b->getId() == id)
+            return b;
+    return nullptr;
+}
+
+void MainPanel::loadLayout()
+{
+    const auto known = defaultBoxOrder();
+    boxOrder.clear();
+    for (const auto& id : juce::StringArray::fromTokens (loadSetting ("boxOrder", {}), ",", {}))
+        if (known.contains (id) && ! boxOrder.contains (id))
+            boxOrder.add (id);
+    for (const auto& id : known)   // boxes from newer versions go at the end
+        if (! boxOrder.contains (id))
+            boxOrder.add (id);
+
+    hiddenBoxes.clear();
+    for (const auto& id : juce::StringArray::fromTokens (loadSetting ("boxHidden", {}), ",", {}))
+        if (known.contains (id))
+            hiddenBoxes.addIfNotAlreadyThere (id);
+}
+
+void MainPanel::saveLayout() const
+{
+    saveSetting ("boxOrder", boxOrder.joinIntoString (","));
+    saveSetting ("boxHidden", hiddenBoxes.joinIntoString (","));
+}
+
+void MainPanel::setBoxVisible (const juce::String& id, bool shouldBeVisible)
+{
+    if (shouldBeVisible)
+        hiddenBoxes.removeString (id);
+    else
+        hiddenBoxes.addIfNotAlreadyThere (id);
+    layoutBoxes();
+    saveLayout();
+}
+
+void MainPanel::moveBox (const juce::String& id, int newIndex)
+{
+    if (! boxOrder.contains (id))
+        return;
+    boxOrder.removeString (id);
+    boxOrder.insert (juce::jlimit (0, boxOrder.size(), newIndex), id);
+    layoutBoxes();
+    saveLayout();
+}
+
+void MainPanel::resetLayout()
+{
+    boxOrder = defaultBoxOrder();
+    hiddenBoxes.clear();
+    layoutBoxes();
+    saveLayout();
+}
+
+// While you drag a box by its title bar: it swaps into the slot under the mouse
+void MainPanel::dragBoxTo (Box& dragged, juce::Point<int> pos)
+{
+    for (auto* other : allBoxes)
+    {
+        if (other == &dragged || ! other->isVisible() || ! other->getBounds().contains (pos))
+            continue;
+
+        juce::StringArray newOrder (boxOrder);
+        newOrder.removeString (dragged.getId());
+        const bool after = pos.x > other->getBounds().getCentreX();
+        newOrder.insert (newOrder.indexOf (other->getId()) + (after ? 1 : 0), dragged.getId());
+        if (newOrder != boxOrder)
+        {
+            boxOrder = newOrder;
+            layoutBoxes();
+        }
+        return;
+    }
+}
+
+// A hidden box still does its job. The VIEW menu warns when one is changing the sound.
+bool MainPanel::isBoxChangingSound (const juce::String& id) const
+{
+    auto value = [this] (const char* paramId) { return state.getRawParameterValue (paramId)->load(); };
+
+    if (id == "chords")   return juce::roundToInt (value (ids::arpMode)) != 0;
+    if (id == "movement") return value (ids::vibDepth) > 0.0f || std::abs (value (ids::sweepAmt)) > 0.5f || value (ids::pwm) > 0.0f
+                              || value (ids::glide) >= 0.001f || juce::roundToInt (value (ids::voiceMode)) == 1;
+    if (id == "crunch")   return value (ids::echoMix) > 0.0f || value (ids::rate) < 44000.0f || value (ids::bits) <= 6.0f;
+    if (id == "filter")   return juce::roundToInt (value (ids::filterType)) != 0;
+    if (id == "play")     return juce::roundToInt (value (ids::scale)) != 0 || proc.isJamOn();
+    if (id == "screen")   return proc.anyMacroOn();   // macros live on the SCREEN
+    return false;
+}
+
+void MainPanel::showViewMenu()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("SHOW / HIDE BOXES");
+    for (int i = 0; i < (int) allBoxes.size(); ++i)
+    {
+        const auto& id = allBoxes[(size_t) i]->getId();
+        const bool shown = isBoxVisible (id);
+        auto name = allBoxes[(size_t) i]->getTitle();
+        if (! shown && isBoxChangingSound (id))
+            name << "   (hidden - still ON!)";
+        menu.addItem (i + 1, name, true, shown);
+    }
+    menu.addSeparator();
+    menu.addItem (100, "SHOW ALL BOXES", ! hiddenBoxes.isEmpty());
+    menu.addItem (101, "RESET LAYOUT (ORDER + ALL BOXES)");
+    menu.addSeparator();
+    menu.addItem (102, "TIP: DRAG A BOX BY ITS TITLE TO MOVE IT", false);
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&viewButton),
+                        [safe = juce::Component::SafePointer<MainPanel> (this)] (int result)
+                        {
+                            if (safe == nullptr || result <= 0)
+                                return;
+                            if (result == 100)
+                            {
+                                safe->hiddenBoxes.clear();
+                                safe->layoutBoxes();
+                                safe->saveLayout();
+                            }
+                            else if (result == 101)
+                                safe->resetLayout();
+                            else if (juce::isPositiveAndBelow (result - 1, (int) safe->allBoxes.size()))
+                            {
+                                const auto& id = safe->allBoxes[(size_t) result - 1]->getId();
+                                safe->setBoxVisible (id, ! safe->isBoxVisible (id));
+                            }
+                        });
 }
 
 void MainPanel::timerCallback()
@@ -2080,15 +2369,36 @@ BitBuddyEditor::BitBuddyEditor (BitBuddyProcessor& p)
     lnf.applyPaletteColours();
     themeEvents->addChangeListener (this);
 
-    panel = std::make_unique<bb::MainPanel> (p, lnf);
-    addAndMakeVisible (*panel);
-
     setResizable (true, true);
-    setResizeLimits (700, 545, 2000, 1556);
-    if (auto* sizeLimits = getConstrainer())
-        sizeLimits->setFixedAspectRatio ((double) bb::MainPanel::baseWidth / (double) bb::MainPanel::baseHeight);
+    createPanel();
+    fitWindowToPanel (bb::MainPanel::baseWidth);
+}
 
-    setSize (bb::MainPanel::baseWidth, bb::MainPanel::baseHeight);
+void BitBuddyEditor::createPanel()
+{
+    panel = std::make_unique<bb::MainPanel> (bitBuddy, lnf);
+    panel->onDesignHeightChanged = [this]
+    {
+        // Boxes were hidden / shown / moved: reshape the window once this layout pass is done
+        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<BitBuddyEditor> (this)]
+        {
+            if (safe != nullptr)
+                safe->fitWindowToPanel (safe->getWidth());
+        });
+    };
+    addAndMakeVisible (*panel);
+}
+
+void BitBuddyEditor::fitWindowToPanel (int width)
+{
+    const double ratio = (double) bb::MainPanel::baseWidth / (double) panel->getDesignHeight();
+    setResizeLimits (600, juce::roundToInt (600.0 / ratio), 2000, juce::roundToInt (2000.0 / ratio));
+    if (auto* sizeLimits = getConstrainer())
+        sizeLimits->setFixedAspectRatio (ratio);
+
+    width = juce::jlimit (600, 2000, width);
+    setSize (width, juce::roundToInt (width / ratio));
+    resized();
 }
 
 BitBuddyEditor::~BitBuddyEditor()
@@ -2101,9 +2411,8 @@ void BitBuddyEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     lnf.applyPaletteColours();
     panel.reset();
-    panel = std::make_unique<bb::MainPanel> (bitBuddy, lnf);
-    addAndMakeVisible (*panel);
-    resized();
+    createPanel();
+    fitWindowToPanel (getWidth());
     repaint();
 }
 
@@ -2117,10 +2426,10 @@ void BitBuddyEditor::resized()
     if (panel == nullptr)
         return;
 
-    // Fit the 1000 x 660 design inside any window or phone screen, centred
-    const float w = (float) bb::MainPanel::baseWidth, h = (float) bb::MainPanel::baseHeight;
+    // Fit the design (1000 units wide, as tall as your boxes need) inside any window or phone screen, centred
+    const float w = (float) bb::MainPanel::baseWidth, h = (float) panel->getDesignHeight();
     const float scale = juce::jmin ((float) getWidth() / w, (float) getHeight() / h);
     panel->setTransform (juce::AffineTransform::scale (scale)
                              .translated (((float) getWidth() - w * scale) * 0.5f, ((float) getHeight() - h * scale) * 0.5f));
-    panel->setBounds (0, 0, bb::MainPanel::baseWidth, bb::MainPanel::baseHeight);
+    panel->setBounds (0, 0, bb::MainPanel::baseWidth, panel->getDesignHeight());
 }

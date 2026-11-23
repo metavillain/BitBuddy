@@ -65,6 +65,12 @@ void applyTheme (int theme)
     pal::dark = juce::Colour (t.dark);     pal::pink = juce::Colour (t.pink);     pal::screen = juce::Colour (t.screen);
 }
 
+static juce::File& settingsFileOverride()
+{
+    static juce::File file;
+    return file;
+}
+
 static std::unique_ptr<juce::PropertiesFile> openSettings()
 {
     juce::PropertiesFile::Options options;
@@ -72,19 +78,33 @@ static std::unique_ptr<juce::PropertiesFile> openSettings()
     options.filenameSuffix = "settings";
     options.folderName = "BitBuddy";
     options.osxLibrarySubFolder = "Application Support";
+    if (settingsFileOverride() != juce::File())
+        return std::make_unique<juce::PropertiesFile> (settingsFileOverride(), options);
     return std::make_unique<juce::PropertiesFile> (options);
+}
+
+void useSettingsFile (const juce::File& file) { settingsFileOverride() = file; }
+
+juce::String loadSetting (const juce::String& key, const juce::String& fallback)
+{
+    return openSettings()->getValue (key, fallback);
+}
+
+void saveSetting (const juce::String& key, const juce::String& value)
+{
+    auto settings = openSettings();
+    settings->setValue (key, value);
+    settings->saveIfNeeded();
 }
 
 int loadThemeSetting()
 {
-    return juce::jlimit (0, kNumThemes - 1, openSettings()->getIntValue ("theme", 0));
+    return juce::jlimit (0, kNumThemes - 1, loadSetting ("theme", "0").getIntValue());
 }
 
 void saveThemeSetting (int theme)
 {
-    auto settings = openSettings();
-    settings->setValue ("theme", theme);
-    settings->saveIfNeeded();
+    saveSetting ("theme", juce::String (theme));
 }
 
 //==============================================================================

@@ -40,6 +40,11 @@ bool themeChosen();                          // has a theme been applied yet in 
 int loadThemeSetting();
 void saveThemeSetting (int theme);
 
+/** BitBuddy's own settings file (theme, box layout), shared by the app and every plugin. */
+juce::String loadSetting (const juce::String& key, const juce::String& fallback);
+void saveSetting (const juce::String& key, const juce::String& value);
+void useSettingsFile (const juce::File&);   // tests: keep your real settings untouched
+
 /** Tells every open BitBuddy window to repaint in the new colours. */
 struct ThemeEvents : public juce::ChangeBroadcaster {};
 

@@ -73,24 +73,61 @@ private:
 };
 
 //==============================================================================
-/** A numbered, framed section of BitBuddy ("box") that owns its own controls,
-    so it can be laid out (and later hidden or moved) as one piece. */
+/** The little "x" in a box's corner: hides the box (bring it back from VIEW). */
+class HideButton : public juce::Button
+{
+public:
+    HideButton();
+    void paintButton (juce::Graphics&, bool isMouseOver, bool isButtonDown) override;
+};
+
+/** A numbered, framed section of BitBuddy ("box") with its own controls. You can
+    drag a box by its title bar to move it, or hide it with its "x". */
 class Box : public juce::Component
 {
 public:
-    Box (const juce::String& number, const juce::String& title, juce::Colour accent);
+    Box (const juce::String& id, const juce::String& number, const juce::String& title, juce::Colour accent,
+         int naturalWidth, int naturalHeight);
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
 
-    std::function<void()> onDice;   // what the corner dice re-rolls
+    void setDice (std::function<void()> rollSection);   // a dice in the corner re-rolls this section
+    const juce::String& getId() const noexcept    { return id; }
+    const juce::String& getTitle() const noexcept { return title; }
+    int getNaturalWidth() const noexcept          { return naturalWidth; }
+    int getNaturalHeight() const noexcept         { return naturalHeight; }
+
+    std::function<void (Box&)> onHide;
+    std::function<void (Box&, const juce::MouseEvent&)> onDragStart, onDragMove, onDragEnd;
+
+    static constexpr int headerHeight = 24;
 
 protected:
     virtual void layoutContent (juce::Rectangle<int> area) = 0;
     juce::Colour accent;
 
 private:
-    juce::String number, title;
+    juce::String id, number, title;
+    int naturalWidth, naturalHeight;
     DiceButton dice;
+    HideButton hide;
+    std::function<void()> onDice;
+    bool dragging = false;
+};
+
+/** A box whose controls are positioned by a layout function (box-local coordinates). */
+class SectionBox : public Box
+{
+public:
+    using Box::Box;
+    std::function<void()> layout;
+
+private:
+    void layoutContent (juce::Rectangle<int>) override { if (layout != nullptr) layout(); }
 };
 
 /** Draws which pitches the filter lets through. */
@@ -272,11 +309,12 @@ private:
 };
 
 //==============================================================================
-/** Everything you see. Designed at 1000 x 778 and scaled to the window size. */
+/** Everything you see. 1000 units wide (scaled to the window); its height depends
+    on which boxes are shown (778 with all of them). */
 class MainPanel : public juce::Component, private juce::Timer
 {
 public:
-    static constexpr int baseWidth = 1000, baseHeight = 778;
+    static constexpr int baseWidth = 1000, fullHeight = 778;
 
     MainPanel (BitBuddyProcessor&, RetroLookAndFeel&);
     ~MainPanel() override;
@@ -287,7 +325,25 @@ public:
     void mouseExit (const juce::MouseEvent&) override;
     void mouseDown (const juce::MouseEvent&) override;
 
+    //==========================================================================
+    // Layout: which boxes are shown, and in what order
+    int getDesignHeight() const noexcept { return designHeight; }
+    std::function<void()> onDesignHeightChanged;
+    void setBoxVisible (const juce::String& id, bool shouldBeVisible);
+    bool isBoxVisible (const juce::String& id) const { return ! hiddenBoxes.contains (id); }
+    void moveBox (const juce::String& id, int newIndex);
+    void resetLayout();
+    juce::StringArray getBoxOrder() const { return boxOrder; }
+
 private:
+    void layoutBoxes();
+    void loadLayout();
+    void saveLayout() const;
+    void showViewMenu();
+    bool isBoxChangingSound (const juce::String& id) const;
+    Box* findBox (const juce::String& id) const;
+    void dragBoxTo (Box&, juce::Point<int> positionInPanel);
+
     void timerCallback() override;
     void showHintFor (juce::Component*);
 
@@ -300,16 +356,20 @@ private:
     void syncPresetBox();
     void setupCombo (juce::ComboBox&, juce::Label&, const juce::String& title, const juce::StringArray& items,
                      const juce::String& hint, juce::Colour accent);
-    void drawSection (juce::Graphics&, juce::Rectangle<int>, const juce::String& number, const juce::String& title,
-                      juce::Colour accent);
 
     BitBuddyProcessor& proc;
     juce::AudioProcessorValueTreeState& state;
 
+    // the boxes (each section of BitBuddy), in their default order
+    SectionBox soundBox, screenBox, shapeBox, chordsBox, movementBox, crunchBox, playBox;
+    std::vector<Box*> allBoxes;
+    juce::StringArray boxOrder, hiddenBoxes;
+    int designHeight = fullHeight;
+
     // header
     Mascot mascot;
     void showThemeMenu();
-    juce::TextButton helpButton { "? HELP" };
+    juce::TextButton helpButton { "? HELP" }, viewButton { "VIEW" };
     juce::TextButton prevButton { "<" }, nextButton { ">" };
     juce::TextButton saveButton { "SAVE" }, mutateButton { "MUTATE" };
     juce::TextButton surpriseButton { "SURPRISE ME!" };
@@ -320,9 +380,6 @@ private:
     void askToSavePreset();
     void savePresetAs (const juce::String& name);
     void askToDeletePreset();
-
-    // one dice button per section
-    DiceButton diceSound, diceShape, diceChords, diceMovement, diceCrunch;
 
     // 1. pick a sound
     ParamButtons waveSelector;
@@ -390,7 +447,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> chordAtt, patternAtt, speedAtt, echoTimeAtt,
                                                                             keyAtt, scaleAtt;
 
-    juce::Rectangle<int> s1, sScope, s2, s3, s4, s5, s6, sPlay, hintArea;
+    juce::Rectangle<int> hintArea;
     int lastWave = -1, lastArpMode = -1, lastScaleState = -1;
     juce::String lastPresetName;
     bool lastWasUserPreset = false;
@@ -409,6 +466,8 @@ public:
 
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;   // colour theme changed: rebuild in the new colours
+    void createPanel();
+    void fitWindowToPanel (int width);   // window shape follows the boxes you show
 
     BitBuddyProcessor& bitBuddy;
     bb::RetroLookAndFeel lnf;

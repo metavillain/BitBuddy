@@ -1364,6 +1364,28 @@ static int runSnapshot (const File& outDir)
         buf.clear();
         proc.processBlock (buf, off);
     }
+
+    // A custom layout: two boxes hidden, PLAY ALONG moved to the top
+    {
+        bb::applyTheme (0);
+        selectProgram (proc, "Hero Lead");
+        std::unique_ptr<AudioProcessorEditor> editor (proc.createEditor());
+        editor->setVisible (true);
+        if (auto* panel = findComponent<bb::MainPanel> (*editor))
+        {
+            panel->setBoxVisible ("movement", false);
+            panel->setBoxVisible ("crunch", false);
+            panel->moveBox ("play", 0);
+            MessageManager::getInstance()->runDispatchLoopUntil (400);
+            const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+            const auto file = outDir.getChildFile ("ui-custom-layout.png");
+            file.deleteFile();
+            FileOutputStream out (file);
+            PNGImageFormat().writeImageToStream (image, out);
+            std::cout << "  wrote " << file.getFullPathName() << "\n";
+            panel->resetLayout();
+        }
+    }
     return 0;
 }
 
@@ -1453,6 +1475,55 @@ static int runFocusTest()
         });
     res.check (piano != nullptr && offenders.isEmpty(), "Only the piano can take keyboard focus",
                offenders.isEmpty() ? String ("ok") : offenders.joinIntoString (", "));
+
+    // 1b. Boxes: hide, move, reset - and the window reshapes to fit
+    if (auto* panel = findComponent<bb::MainPanel> (*editor))
+    {
+        auto settle = [] { MessageManager::getInstance()->runDispatchLoopUntil (250); };
+        auto boxVisible = [&] (const String& id)
+        {
+            auto* b = findComponent<bb::Box> (*panel, [&] (bb::Box& box) { return box.getId() == id; });
+            return b != nullptr && b->isVisible();
+        };
+        const int fullHeight = panel->getDesignHeight();
+
+        // The "x" on the first box hides it (a real button press)
+        if (auto* hideFirst = findButton (*editor, "HIDE"))
+            hideFirst->triggerClick();
+        settle();
+        const bool hiddenByButton = ! boxVisible ("sound") && ! panel->isBoxVisible ("sound");
+        panel->setBoxVisible ("sound", true);
+
+        panel->setBoxVisible ("filter", false);
+        panel->setBoxVisible ("play", false);
+        settle();
+        const int shortHeight = panel->getDesignHeight();
+        // (the test window's own title bar skews its outer size, so check the shape the editor asks for)
+        const double windowRatio = editor->getConstrainer() != nullptr ? editor->getConstrainer()->getFixedAspectRatio() : 0.0;
+        const bool savedHidden = bb::loadSetting ("boxHidden", {}).contains ("filter");
+
+        panel->moveBox ("crunch", 0);
+        settle();
+        auto* crunch = findComponent<bb::Box> (*panel, [] (bb::Box& box) { return box.getId() == "crunch"; });
+        const bool movedFirst = panel->getBoxOrder()[0] == "crunch" && crunch != nullptr && crunch->getPosition() == Point<int> (10, 64);
+
+        panel->resetLayout();
+        settle();
+        const bool reset = panel->getDesignHeight() == fullHeight && boxVisible ("filter") && boxVisible ("play")
+                        && panel->getBoxOrder()[0] == "sound";
+
+        res.check (fullHeight == 778 && hiddenByButton && shortHeight == 660 && std::abs (windowRatio - 1000.0 / 660.0) < 0.01
+                       && savedHidden && movedFirst && reset,
+                   "Boxes: hide (x button + VIEW), move, reset; window reshapes; layout saved",
+                   "height " + String (fullHeight) + " -> " + String (shortHeight) + ", window ratio " + String (windowRatio, 3)
+                       + " (" + String (editor->getWidth()) + "x" + String (editor->getHeight()) + ")"
+                       + (hiddenByButton ? ", x ok" : ", X FAILED") + (savedHidden ? ", saved" : ", NOT SAVED")
+                       + (movedFirst ? ", moved" : ", MOVE FAILED") + (reset ? ", reset" : ", RESET FAILED"));
+    }
+    else
+    {
+        res.check (false, "Boxes: hide, move, reset", "MainPanel not found");
+    }
 
     auto* peer = editor->getPeer();
     if (peer == nullptr || piano == nullptr || ! peer->isFocused())
@@ -1556,6 +1627,11 @@ static int runIcon (const File& file)
 int main (int argc, char* argv[])
 {
     ScopedJuceInitialiser_GUI juceInit;
+
+    // Tests change themes and box layouts: keep the real BitBuddy settings untouched
+    const auto testSettings = File::getSpecialLocation (File::tempDirectory).getChildFile ("BitBuddyTests.settings");
+    testSettings.deleteFile();
+    bb::useSettingsFile (testSettings);
 
     StringArray args;
     for (int i = 1; i < argc; ++i)
