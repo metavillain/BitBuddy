@@ -968,6 +968,53 @@ static int runFocusTest()
 }
 
 //==============================================================================
+// Draws the 1024 x 1024 app icon (used for the Windows / Mac / iOS / Android apps).
+static int runIcon (const File& file)
+{
+    constexpr int size = 1024;
+    Image img (Image::ARGB, size, size, true);
+    {
+        Graphics g (img);
+        const Rectangle<float> area (0.0f, 0.0f, (float) size, (float) size);
+        g.setColour (bb::pal::bg);
+        g.fillRoundedRectangle (area.reduced (40.0f), 190.0f);
+        g.setColour (bb::pal::yellow);
+        g.drawRoundedRectangle (area.reduced (72.0f), 160.0f, 22.0f);
+
+        // "BB" in chunky pixel letters with a drop shadow
+        g.setFont (bb::pixelFont (330.0f));
+        const juce::Colour letterColours[] = { bb::pal::orange, bb::pal::cyan };
+        for (int i = 0; i < 2; ++i)
+        {
+            const Rectangle<int> cell (182 + i * 330, 200, 330, 400);
+            g.setColour (bb::pal::purple);
+            g.drawText ("B", cell.translated (22, 22), Justification::centred);
+            g.setColour (letterColours[i]);
+            g.drawText ("B", cell, Justification::centred);
+        }
+
+        // A pixel-art square wave underneath
+        constexpr int px = 32, x0 = 176, x1 = 848, high = 680, low = 776, halfCycle = 4 * px;
+        g.setColour (bb::pal::lime);
+        int prevY = -1;
+        for (int x = x0; x < x1; x += px)
+        {
+            const int y = (((x - x0) / halfCycle) % 2 == 0) ? high : low;
+            if (prevY >= 0 && y != prevY)
+                g.fillRect (x, high, px, low - high + px);
+            g.fillRect (x, y, px, px);
+            prevY = y;
+        }
+    }
+
+    file.deleteFile();
+    FileOutputStream out (file);
+    const bool ok = out.openedOk() && PNGImageFormat().writeImageToStream (img, out);
+    std::cout << "  wrote " << file.getFullPathName() << (ok ? "" : "  (FAILED)") << "\n";
+    return ok ? 0 : 1;
+}
+
+//==============================================================================
 int main (int argc, char* argv[])
 {
     ScopedJuceInitialiser_GUI juceInit;
@@ -986,6 +1033,8 @@ int main (int argc, char* argv[])
         return runFocusTest();
     if (args.size() >= 2 && args[0] == "--bench")
         return runBench (args[1]);
+    if (args.size() >= 2 && args[0] == "--icon")
+        return runIcon (File (args[1]));
 
     std::cout << "usage:\n  BitBuddyTestHost --test <plugin.vst3>\n"
                  "  BitBuddyTestHost --demo <plugin.vst3> <outDir>\n"

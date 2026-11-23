@@ -1,7 +1,8 @@
 name: Build
 
-# Every push to main: build + test Windows and macOS.
-# Pushing a tag like v1.0.1 also publishes a Release page with both zips.
+# Every push to main: build + test Windows, macOS, Android (emulator) and iOS (simulator).
+# Pushing a tag like v1.0.1 also publishes a Release page with the Windows +
+# macOS zips and the Android APK.
 on:
   push:
     branches: [main]
@@ -108,10 +109,110 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
 
+  android:
+    name: Android (standalone app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Linux packages (to build JUCE's Projucer)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ninja-build xvfb libasound2-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev \
+            libxrender-dev libgl1-mesa-dev libcurl4-openssl-dev
+
+      - name: Build the Projucer (JUCE's Android project generator)
+        run: |
+          cmake -S external/JUCE -B build-projucer -G Ninja -DCMAKE_BUILD_TYPE=Release -DJUCE_BUILD_EXTRAS=ON
+          cmake --build build-projucer --target Projucer
+
+      - name: Generate the Android Studio project from android/BitBuddy.jucer
+        run: xvfb-run -a "$(find build-projucer -type f -name Projucer -perm -u+x | head -1)" --resave android/BitBuddy.jucer
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Android NDK + signing key
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.1.13356709" > /dev/null
+          mkdir -p ~/.android
+          keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey \
+            -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=BitBuddy,O=BitBuddy Labs,C=US"
+
+      - name: Build the APK
+        working-directory: android/Builds/Android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease_Release --no-daemon --quiet
+          version="$(sed -n 's/^project(BitBuddy VERSION \([0-9.]*\).*/\1/p' "$GITHUB_WORKSPACE/CMakeLists.txt")"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp "$(find app/build/outputs/apk -name '*.apk' | head -1)" "$GITHUB_WORKSPACE/dist/BitBuddy-$version-Android.apk"
+
+      - name: Enable hardware acceleration for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Smoke test on an Android 14 emulator (install, launch, screenshot)
+        uses: ReactiveCircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: bash scripts/android-smoke-test.sh dist/BitBuddy-*-Android.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: BitBuddy-Android
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: screenshot-android
+          path: dist/android-screenshot.png
+          if-no-files-found: ignore
+
+  ios:
+    name: iOS (AUv3 + app, iPad simulator)
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Configure (Xcode project for iPhone / iPad)
+        run: >
+          cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator
+          -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO
+
+      - name: Build the app + AUv3 for the simulator
+        run: cmake --build build-ios --config Release --target BitBuddy_Standalone -- -quiet
+
+      - name: Smoke test on an iPad simulator (install, launch, screenshot)
+        run: bash scripts/ios-smoke-test.sh
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: screenshot-ios
+          path: dist/ios-screenshot.png
+          if-no-files-found: ignore
+
   release:
     name: Publish the Release page
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, macos]
+    needs: [windows, macos, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -127,6 +228,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
-          gh release create "$GITHUB_REF_NAME" artifacts/*.zip
+          gh release create "$GITHUB_REF_NAME" artifacts/*.zip artifacts/*.apk
           --title "BitBuddy ${GITHUB_REF_NAME#v}"
           --notes-file .github/RELEASE_NOTES.md

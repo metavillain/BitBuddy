@@ -13,3 +13,7 @@ Thumbs.db
 
 # Local Claude settings
 .claude/settings.local.json
+
+# Android project generated from android/BitBuddy.jucer by the Projucer (CI regenerates it)
+android/Builds/
+android/JuceLibraryCode/

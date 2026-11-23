@@ -1,8 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 
-# macOS: one "universal" build for Apple Silicon + Intel Macs (ignored elsewhere)
-set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures")
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Oldest supported macOS")
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # iPhone / iPad (configure with -G Xcode -DCMAKE_SYSTEM_NAME=iOS)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Oldest supported iOS")
+else()
+    # macOS: one "universal" build for Apple Silicon + Intel Macs (ignored elsewhere)
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Oldest supported macOS")
+endif()
 
 project(BitBuddy VERSION 1.0.1 LANGUAGES C CXX)
 
@@ -36,10 +41,14 @@ set(BITBUDDY_JUCE_OPTIONS
 
 # ---------------------------------------------------------------------------
 # The plugin: VST3 (most DAWs) + Standalone app, plus AU on Mac (Logic, GarageBand)
+# and AUv3 on iPhone / iPad (GarageBand iOS, AUM, Cubasis). Android: see android/.
 # ---------------------------------------------------------------------------
-set(BITBUDDY_FORMATS VST3 Standalone)
-if(APPLE)
-    list(APPEND BITBUDDY_FORMATS AU)
+if(IOS)
+    set(BITBUDDY_FORMATS AUv3 Standalone)
+elseif(APPLE)
+    set(BITBUDDY_FORMATS VST3 Standalone AU)
+else()
+    set(BITBUDDY_FORMATS VST3 Standalone)
 endif()
 
 juce_add_plugin(BitBuddy
@@ -56,7 +65,13 @@ juce_add_plugin(BitBuddy
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
-    VST3_CATEGORIES Instrument Synth)
+    VST3_CATEGORIES Instrument Synth
+    ICON_BIG assets/icon.png
+    # iPhone / iPad app settings (ignored on desktop)
+    REQUIRES_FULL_SCREEN TRUE
+    STATUS_BAR_HIDDEN TRUE
+    IPHONE_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+    IPAD_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight)
 
 target_sources(BitBuddy PRIVATE ${BITBUDDY_SOURCES})
 target_compile_definitions(BitBuddy PUBLIC ${BITBUDDY_JUCE_OPTIONS} JUCE_VST3_CAN_REPLACE_VST2=0)
@@ -73,7 +88,12 @@ target_link_libraries(BitBuddy
 # ---------------------------------------------------------------------------
 # Test host (tests/TestHost.cpp): loads the built VST3 like a DAW does, runs
 # the automated tests and benchmark, renders the demo song and UI snapshots.
+# (Desktop only.)
 # ---------------------------------------------------------------------------
+if(IOS)
+    return()
+endif()
+
 juce_add_console_app(BitBuddyTestHost PRODUCT_NAME "BitBuddyTestHost")
 
 target_sources(BitBuddyTestHost PRIVATE tests/TestHost.cpp ${BITBUDDY_SOURCES})

@@ -26,7 +26,8 @@ Copy-Item "$rel\Standalone\BitBuddy.exe" $pkg
 # --- demo, guide, source -----------------------------------------------------
 Copy-Item -Recurse "$root\demo\*" "$pkg\Demo"
 Copy-Item "$root\docs\BEGINNERS-GUIDE.md" "$pkg\Beginners-Guide.md"
-git archive --format=zip -o "$pkg\Source\BitBuddy-$version-source.zip" HEAD
+# (the demo WAV is already in Demo\, so leave it out of the source copy)
+git archive --format=zip -o "$pkg\Source\BitBuddy-$version-source.zip" HEAD -- . ':(exclude)demo/*.wav'
 if ($LASTEXITCODE -ne 0) { throw "git archive failed" }
 
 # --- installer -----------------------------------------------------------------

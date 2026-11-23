@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Android build of BitBuddy (standalone app).
+  JUCE's CMake API doesn't support Android, so this Projucer project generates
+  the Android Studio / Gradle project:   Projucer - -resave android/BitBuddy.jucer
+  It compiles the same ../src files as the desktop build. CI does all of this:
+  see .github/workflows/build.yml (job "android").
+-->
+<JUCERPROJECT id="BbDy8A" name="BitBuddy" projectType="audioplug" version="1.0.1"
+              companyName="BitBuddy Labs" companyCopyright="BitBuddy Labs" bundleIdentifier="com.bitbuddylabs.bitbuddy"
+              pluginFormats="buildStandalone" pluginName="BitBuddy" pluginDesc="Easy chiptune / 8-bit synth"
+              pluginManufacturerCode="Bbdl" pluginCode="Bbd1"
+              pluginCharacteristicsValue="pluginIsSynth,pluginWantsMidiIn,pluginEditorRequiresKeys"
+              cppLanguageStandard="20" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+  <MAINGROUP id="BbG001" name="BitBuddy">
+    <GROUP id="BbG002" name="src">
+      <FILE id="BbF001" name="ChipEngine.cpp" compile="1" resource="0" file="../src/ChipEngine.cpp"/>
+      <FILE id="BbF002" name="ChipEngine.h" compile="0" resource="0" file="../src/ChipEngine.h"/>
+      <FILE id="BbF003" name="Effects.h" compile="0" resource="0" file="../src/Effects.h"/>
+      <FILE id="BbF004" name="Parameters.cpp" compile="1" resource="0" file="../src/Parameters.cpp"/>
+      <FILE id="BbF005" name="Parameters.h" compile="0" resource="0" file="../src/Parameters.h"/>
+      <FILE id="BbF006" name="Presets.cpp" compile="1" resource="0" file="../src/Presets.cpp"/>
+      <FILE id="BbF007" name="Presets.h" compile="0" resource="0" file="../src/Presets.h"/>
+      <FILE id="BbF008" name="PluginProcessor.cpp" compile="1" resource="0" file="../src/PluginProcessor.cpp"/>
+      <FILE id="BbF009" name="PluginProcessor.h" compile="0" resource="0" file="../src/PluginProcessor.h"/>
+      <FILE id="BbF010" name="PluginEditor.cpp" compile="1" resource="0" file="../src/PluginEditor.cpp"/>
+      <FILE id="BbF011" name="PluginEditor.h" compile="0" resource="0" file="../src/PluginEditor.h"/>
+      <FILE id="BbF012" name="RetroLookAndFeel.cpp" compile="1" resource="0" file="../src/RetroLookAndFeel.cpp"/>
+      <FILE id="BbF013" name="RetroLookAndFeel.h" compile="0" resource="0" file="../src/RetroLookAndFeel.h"/>
+    </GROUP>
+    <GROUP id="BbG003" name="assets">
+      <FILE id="BbFont" name="PressStart2P-Regular.ttf" compile="0" resource="1" file="../assets/PressStart2P-Regular.ttf"/>
+      <FILE id="BbIcon" name="icon.png" compile="0" resource="0" file="../assets/icon.png"/>
+    </GROUP>
+  </MAINGROUP>
+  <JUCEOPTIONS JUCE_WEB_BROWSER="0" JUCE_USE_CURL="0" JUCE_USE_FLAC="0" JUCE_USE_OGGVORBIS="0"
+               JUCE_VST3_CAN_REPLACE_VST2="0"/>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1"/>
+    <MODULE id="juce_audio_devices" showAllCode="1"/>
+    <MODULE id="juce_audio_formats" showAllCode="1"/>
+    <MODULE id="juce_audio_plugin_client" showAllCode="1"/>
+    <MODULE id="juce_audio_processors" showAllCode="1"/>
+    <MODULE id="juce_audio_processors_headless" showAllCode="1"/>
+    <MODULE id="juce_audio_utils" showAllCode="1"/>
+    <MODULE id="juce_core" showAllCode="1"/>
+    <MODULE id="juce_data_structures" showAllCode="1"/>
+    <MODULE id="juce_events" showAllCode="1"/>
+    <MODULE id="juce_graphics" showAllCode="1"/>
+    <MODULE id="juce_gui_basics" showAllCode="1"/>
+    <MODULE id="juce_gui_extra" showAllCode="1"/>
+  </MODULES>
+  <EXPORTFORMATS>
+    <ANDROIDSTUDIO targetFolder="Builds/Android" androidMinimumSDK="24" androidTargetSDK="35"
+                   androidScreenOrientation="landscape" androidVersionCode="101" bigIcon="BbIcon"
+                   microphonePermissionNeeded="0" androidInternetNeeded="0" androidExternalWriteNeeded="0"
+                   androidReadMediaAudioPermission="0" androidReadMediaImagesPermission="0"
+                   androidReadMediaVideoPermission="0" androidPushNotifications="0">
+      <CONFIGURATIONS>
+        <CONFIGURATION name="Debug" isDebug="1" optimisation="1" androidArchitectures="arm64-v8a x86_64"/>
+        <CONFIGURATION name="Release" isDebug="0" optimisation="3" linkTimeOptimisation="1"
+                       androidArchitectures="arm64-v8a x86_64"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_plugin_client" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_core" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="../external/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="../external/JUCE/modules"/>
+      </MODULEPATHS>
+    </ANDROIDSTUDIO>
+  </EXPORTFORMATS>
+</JUCERPROJECT>

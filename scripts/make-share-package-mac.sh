@@ -30,7 +30,8 @@ done
 # --- demo, guide, source, licenses -----------------------------------------------
 cp -R demo/. "$pkg/Demo/"
 cp docs/BEGINNERS-GUIDE.md "$pkg/Beginners-Guide.md"
-git archive --format=zip -o "$pkg/Source/BitBuddy-$version-source.zip" HEAD
+# (the demo WAV is already in Demo/, so leave it out of the source copy)
+git archive --format=zip -o "$pkg/Source/BitBuddy-$version-source.zip" HEAD -- . ':(exclude)demo/*.wav'
 
 {
     echo "BitBuddy $version is free software: GNU Affero General Public License v3 (see LICENSE)."

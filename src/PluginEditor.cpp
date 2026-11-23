@@ -671,8 +671,12 @@ void MainPanel::updateKeysStatus()
     }
 }
 
-void MainPanel::mouseDown (const juce::MouseEvent&)
+void MainPanel::mouseDown (const juce::MouseEvent& e)
 {
+    // Touch screens have no hover: tapping a control shows its help instead
+    if (e.source.isTouch())
+        showHintFor (e.eventComponent);
+
     // Any click inside BitBuddy (knob, button, wave...) hands the letter keys to the piano
     focusKeyboard();
 }
@@ -880,9 +884,11 @@ void MainPanel::mouseEnter (const juce::MouseEvent& e)
     showHintFor (e.eventComponent);
 }
 
-void MainPanel::mouseExit (const juce::MouseEvent&)
+void MainPanel::mouseExit (const juce::MouseEvent& e)
 {
-    hintLabel.setText (kDefaultHint, juce::dontSendNotification);
+    // On a touch screen the finger "leaves" as soon as it lifts: keep the hint up
+    if (! e.source.isTouch())
+        hintLabel.setText (kDefaultHint, juce::dontSendNotification);
 }
 
 void MainPanel::showHintFor (juce::Component* c)
@@ -934,7 +940,10 @@ void BitBuddyEditor::resized()
     if (panel == nullptr)
         return;
 
-    const float scale = (float) getWidth() / (float) bb::MainPanel::baseWidth;
-    panel->setTransform (juce::AffineTransform::scale (scale));
+    // Fit the 1000 x 660 design inside any window or phone screen, centred
+    const float w = (float) bb::MainPanel::baseWidth, h = (float) bb::MainPanel::baseHeight;
+    const float scale = juce::jmin ((float) getWidth() / w, (float) getHeight() / h);
+    panel->setTransform (juce::AffineTransform::scale (scale)
+                             .translated (((float) getWidth() - w * scale) * 0.5f, ((float) getHeight() - h * scale) * 0.5f));
     panel->setBounds (0, 0, bb::MainPanel::baseWidth, bb::MainPanel::baseHeight);
 }

@@ -4,6 +4,7 @@
 |---|---|
 | **Windows** 10 / 11 (64-bit) | **BitBuddy-…-Windows.zip** (below) |
 | **Mac** (Apple Silicon or Intel, macOS 10.13+) | **BitBuddy-…-macOS.zip** (below) |
+| **Android** 7.0+ phone or tablet | **BitBuddy-…-Android.apk** (below) |
 
 Unzip it and open **READ ME FIRST.txt**. The short version:
 
@@ -12,6 +13,10 @@ Unzip it and open **READ ME FIRST.txt**. The short version:
 - **Mac:** double-click `Install BitBuddy.command`. If macOS blocks it, open
   **System Settings → Privacy & Security → Open Anyway** (macOS 14 and older: right-click → **Open**).
   Then find BitBuddy in GarageBand / Logic under *AU Instruments → BitBuddy Labs*.
+- **Android:** open the `.apk` on your phone. Android asks to allow installing apps from your
+  browser or Files app: tap **Settings → Allow from this source**, then **Install**. BitBuddy
+  needs no permissions. Turn your phone sideways and tap a control to see what it does.
+- **iPhone / iPad:** coming later (Apple requires a paid developer account to share apps).
 
 New to making music? The **[Beginner's Guide](https://github.com/metavillain/BitBuddy/blob/main/docs/BEGINNERS-GUIDE.md)**
 takes you from zero to your first chiptune song.
