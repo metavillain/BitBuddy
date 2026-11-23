@@ -63,6 +63,9 @@ void BitBuddyProcessor::prepareToPlay (double sampleRate, int)
     crusher.prepare (sampleRate);
     echo.prepare (sampleRate);
     dcBlocker.reset();
+    effectsIdle = true;
+    echoWasOn = false;
+    quietSamples = 0;
 
     outputGain.reset (sampleRate, 0.02);
     outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (pVolume->load()));
@@ -158,24 +161,43 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     // 1. Synth voices -> channel 0, split at each MIDI event for sample accuracy
     float* mono = buffer.getWritePointer (0);
+    bool engineActive = false;
     int pos = 0;
     for (const auto meta : midi)
     {
         const int eventPos = juce::jlimit (0, numSamples, meta.samplePosition);
         if (eventPos > pos)
         {
-            engine.render (mono + pos, eventPos - pos);
+            engineActive = engine.render (mono + pos, eventPos - pos) || engineActive;
             pos = eventPos;
         }
         handleMidi (meta.getMessage());
     }
     if (pos < numSamples)
-        engine.render (mono + pos, numSamples - pos);
+        engineActive = engine.render (mono + pos, numSamples - pos) || engineActive;
 
     midi.clear();
 
-    // 2. Effects: DC blocker -> crunch -> echo -> volume
+    // 2. Nothing playing and every effect tail has died away? The cleared buffer
+    //    is already the right answer, so an idle BitBuddy costs (almost) nothing.
+    if (! engineActive && effectsIdle)
+    {
+        outputGain.skip (numSamples);
+        scope.pushSilence (numSamples);
+        return;
+    }
+    effectsIdle = false;
+    scope.markActive();
+
+    // Echo set to 0% is skipped entirely (and starts clean when turned back up)
+    const bool useEcho = echoMix > 0.0f;
+    if (useEcho && ! echoWasOn)
+        echo.clear();
+    echoWasOn = useEcho;
+
+    // 3. Effects: DC blocker -> crunch -> echo -> volume
     float* right = numChannels > 1 ? buffer.getWritePointer (1) : nullptr;
+    float peak = 0.0f;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -185,11 +207,13 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         const float g = outputGain.getNextValue();
         scope.push (x * g);
 
-        float l = 0.0f, r = 0.0f;
-        echo.process (x, echoMix, echoFeedback, l, r);
+        float l = x, r = x;
+        if (useEcho)
+            echo.process (x, echoMix, echoFeedback, l, r);
 
         l = softLimit (l * g);   // gentle safety limiter: big chords round off instead of crackling
         r = softLimit (r * g);
+        peak = juce::jmax (peak, std::abs (l), std::abs (r));
 
         if (right != nullptr)
         {
@@ -200,6 +224,22 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         {
             mono[i] = 0.5f * (l + r);
         }
+    }
+
+    // 4. Go idle once nothing has played for longer than the echo can still answer
+    //    (echoes can arrive after a silent gap, so a single quiet block isn't enough)
+    if (! engineActive && peak < 1.0e-6f)
+        quietSamples += numSamples;
+    else
+        quietSamples = 0;
+
+    if (quietSamples > (useEcho ? echo.getMaxDelaySamples() : 0))
+    {
+        effectsIdle = true;
+        quietSamples = 0;
+        dcBlocker.reset();
+        crusher.reset();
+        echo.clear();
     }
 
     for (int ch = 2; ch < numChannels; ++ch)

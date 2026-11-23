@@ -29,7 +29,9 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 18 | **User bug report:** computer keys only work after clicking the piano | root cause: every button/knob/menu took keyboard focus when clicked; the one-time startup focus grab could fire before the window was active | – |
 | 19 | Fix: only the piano may take focus; clicks inside BitBuddy and an active-window timer hand keys back; KEYS ON indicator | new `--focus-test` (simulated mouse clicks on a real window): **9/9**; with the fix disabled (mutant): **1/9** | stale-binary trap, see §4 |
 | 20 | pluginval L10 re-run, reinstall (1 announced UAC) | SUCCESS, hash-verified | – |
-| 21 | Share package for a friend (`tools/make-share-package.ps1`) | self-contained zip: exe + VST3 + .bat installer + READ ME FIRST + guide + demo + source + licenses | – |
+| 21 | Share package for a friend (`scripts/make-share-package.ps1`) | self-contained zip: exe + VST3 + .bat installer + READ ME FIRST + guide + demo + source + licenses | – |
+| 22 | Cleanup + efficiency pass (measured before/after, §9) | VST3 9.10 → 6.73 MB, chords CPU −25%, idle CPU −75%; 46/46 tests, pluginval OK, 0 warnings | caught own idle-path bug via a new test |
+| 23 | Folder consolidation | `src/ tests/ scripts/ docs/reports/`; one `scripts/build-and-test.ps1` replaces ~8 manual commands | – |
 
 ---
 
@@ -126,7 +128,9 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
 
 Four layers. All automated and re-runnable (commands in README → Testing).
 
-**Layer 1: own test host** (`tools/TestHost.cpp --test`): loads the *built VST3* through
+**Run everything:** `scripts\build-and-test.ps1` (build + all layers below, reports in `docs/reports/`).
+
+**Layer 1: own test host** (`tests/TestHost.cpp --test`): loads the *built VST3* through
 JUCE's VST3 hosting, exactly like a DAW, renders offline and measures the audio.
 
 | Area | Criterion |
@@ -185,8 +189,9 @@ For instruments, add an interaction test for the main play loop from day one.
 | Build #1 | compiled first try (278 s, 1 warning) | design-first + API grep paid off |
 | Tests run 1 | 35 / 43 | see root causes below |
 | Tests run 2 | 42 / 44 | |
-| Tests run 3+ | **44 / 44** | `docs/test-results.txt` |
-| pluginval L10 | **SUCCESS** (16 s) | `docs/pluginval/` |
+| Tests run 3+ | **44 / 44** | |
+| pluginval L10 | **SUCCESS** (16 s) | |
+| After cleanup pass | **46 / 46**, focus 9/9, pluginval OK | `docs/reports/` |
 | Mutation | **3 / 3 caught** | |
 
 Root causes of the run-1 failures:
@@ -243,7 +248,30 @@ test/fix loop ~15 min · pluginval 16 s · docs + install + GitHub ~15 min.
 
 ---
 
-## 8. Fun-factor ideas (ranked by fun per effort)
+## 8. Cleanup + efficiency pass (measure → change → re-measure)
+
+Benchmark = `TestHost --bench` (60 s of audio per scenario, best of 3, 44.1 kHz, block 512).
+
+| Metric | Before | After | How |
+|---|---|---|---|
+| VST3 binary | 9.10 MB | **6.73 MB** | dropped unused JUCE codecs (FLAC, Ogg, WMA) + link-time optimisation |
+| Standalone exe | 8.56 MB | **6.41 MB** | same |
+| 8-voice chords | 1.088 % core | **0.816 %** | pitch maths at control rate (every 16 samples) + frequency cache |
+| Lead + echo | 0.200 % | 0.194 % | (already cheap) |
+| Drum pattern | 0.243 % | 0.224 % | |
+| Idle, no notes | 0.117 % | **0.029 %** | engine early-out; skip all effects once tails are silent |
+| Code | 2 near-identical button-group classes, repeated test boilerplate | 1 `ParamButtons` class; shared `renderEvents` / `findComponent` helpers | |
+| Folders | scripts at root + `tools/`, 4 test-report locations, stray logs | `src/ tests/ scripts/ docs/reports/`, 1 screenshot, logs in `build/logs/` | |
+
+**Caught by writing the test first:** the first idle-skip version treated the silent gap *before* a
+dotted-eighth echo arrives as "finished" and cut the echo off. New test "Echo survives the silent gap";
+mutant (naive idle) → echo −120 dB = FAIL; fix (stay awake for the echo's full delay length) → −24 dB = PASS.
+*Lesson: every optimisation that skips work needs a test for the case where skipping is wrong.*
+
+Not done (on purpose): dropping the static C++ runtime (+~0.3 MB, but needed so it runs on any PC);
+disabling JUCE's hidden MIDI-CC parameters (needed for mod wheel / pitch bend in VST3).
+
+## 9. Fun-factor ideas (ranked by fun per effort)
 
 1. **Scale Lock + Smart Chords**: every key snaps to a chosen key/scale (no wrong notes), and CHORD mode
    picks major/minor automatically per scale degree (A → Am, F → F...). Small effort, big beginner payoff.
@@ -256,7 +284,7 @@ test/fix loop ~15 min · pluginval 16 s · docs + install + GitHub ~15 min.
 8. **Visual fun**: letter labels on the piano keys, a pixel mascot that dances to the notes, Game Boy-green / CRT themes.
 9. **Console modes**: NES / Game Boy / C64 voicing presets with each chip's limits.
 
-## 9. Possible next steps
+## 10. Possible next steps
 
 - ~~Run `install-plugin.ps1`~~: done; the retry alone, announced, succeeded. Lesson confirmed.
   The script now verifies the copy by hash (elevated processes don't report failure back).

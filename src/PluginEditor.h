@@ -26,20 +26,24 @@ private:
 };
 
 //==============================================================================
-/** A row (or column) of buttons that picks one value of a choice parameter. */
-class ChoiceButtons : public juce::Component
+/** A row (or column) of buttons that picks one value of a choice parameter:
+    the wave buttons, OFF / CHORD / NOTES and POLY / MONO. */
+class ParamButtons : public juce::Component
 {
 public:
-    ChoiceButtons (juce::RangedAudioParameter& param, const juce::StringArray& labels, juce::Colour accent,
-                   const juce::StringArray& hints, bool vertical = false);
+    using Factory = std::function<juce::Button* (int index)>;
+
+    ParamButtons (juce::RangedAudioParameter& param, int count, const Factory& makeButton,
+                  bool vertical = false, int gap = 2);
 
     void resized() override;
 
 private:
     void update (float value);
 
-    juce::OwnedArray<juce::TextButton> buttons;
+    juce::OwnedArray<juce::Button> buttons;
     bool vertical = false;
+    int gap = 2;
     juce::ParameterAttachment attachment;
 };
 
@@ -56,19 +60,6 @@ private:
     juce::Colour accent;
 };
 
-class WaveSelector : public juce::Component
-{
-public:
-    WaveSelector (juce::RangedAudioParameter& param, juce::Colour accent);
-    void resized() override;
-
-private:
-    void update (float value);
-
-    juce::OwnedArray<WaveButton> buttons;
-    juce::ParameterAttachment attachment;
-};
-
 //==============================================================================
 /** Retro green "screen" that shows the live waveform. */
 class Scope : public juce::Component, public juce::SettableTooltipClient
@@ -82,6 +73,7 @@ private:
     ScopeBuffer& source;
     std::array<float, 2048> samples {};
     int frame = 0;
+    bool wasSilent = false, lastBlink = false;
 };
 
 //==============================================================================
@@ -171,7 +163,7 @@ private:
     juce::Label presetTip;
 
     // 1. pick a sound
-    WaveSelector waveSelector;
+    ParamButtons waveSelector;
     juce::Label waveInfo;
     Scope scope;
 
@@ -180,7 +172,7 @@ private:
     EnvelopeView envelopeView;
 
     // 3. magic chords
-    ChoiceButtons arpModeButtons;
+    ParamButtons arpModeButtons;
     juce::ComboBox chordBox, patternBox, speedBox;
     juce::Label chordLabel, patternLabel, speedLabel;
     Knob octaves;
@@ -188,7 +180,7 @@ private:
 
     // 4. movement
     Knob vibDepth, vibRate, vibDelay, sweepAmt, sweepTime, pwm, glide;
-    ChoiceButtons voiceModeButtons;
+    ParamButtons voiceModeButtons;
 
     // 5. crunch + echo
     Knob bits, rate, echoMix, echoFeedback, volume;

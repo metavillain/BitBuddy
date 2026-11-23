@@ -22,6 +22,15 @@ public:
         writePos.store ((w + 1) & (size - 1), std::memory_order_release);
     }
 
+    /** While idle: flatten the display once, then stop writing. (Audio thread only.) */
+    void pushSilence (int num) noexcept
+    {
+        for (; num > 0 && silentRun < size; --num, ++silentRun)
+            push (0.0f);
+    }
+
+    void markActive() noexcept { silentRun = 0; }
+
     void copyLatest (float* dest, int num) const noexcept
     {
         const int w = writePos.load (std::memory_order_acquire);
@@ -33,6 +42,7 @@ public:
 private:
     std::array<std::atomic<float>, size> data {};
     std::atomic<int> writePos { 0 };
+    int silentRun = 0;
 };
 
 class BitBuddyProcessor : public juce::AudioProcessor
@@ -92,6 +102,9 @@ private:
     bb::PingPongEcho echo;
     juce::SmoothedValue<float> outputGain;
     float echoMix = 0.0f, echoFeedback = 0.0f;
+    bool echoWasOn = false;
+    bool effectsIdle = true;   // no notes and all effect tails have died away
+    int quietSamples = 0;      // consecutive silent output samples with no notes
 
     int currentProgram = 0;
     juce::String customName;

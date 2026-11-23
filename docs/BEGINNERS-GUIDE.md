@@ -59,7 +59,7 @@ A **DAW** (Digital Audio Workstation) is the app you make songs in. **VST3** is
 the plugin format that lets BitBuddy run inside almost any DAW.
 
 **Step 1: make sure the DAW can find BitBuddy.**
-Run `install-plugin.ps1` (right-click → *Run with PowerShell*, click **Yes** on
+Run `scripts\install-plugin.ps1` (right-click → *Run with PowerShell*, click **Yes** on
 the admin prompt). That copies BitBuddy into the standard folder every DAW scans:
 `C:\Program Files\Common Files\VST3`.
 

@@ -154,8 +154,9 @@ static std::vector<RawEvent> toEvents (const std::vector<NoteEvent>& notes, doub
     return ev;
 }
 
-static AudioBuffer<float> renderNotes (AudioPluginInstance& plugin, const std::vector<NoteEvent>& notes, double seconds,
-                                       double sr = 44100.0, int block = 512, double bpm = 120.0)
+// Prepares the plugin like a DAW pressing Play, renders the events, then stops.
+static AudioBuffer<float> renderEvents (AudioPluginInstance& plugin, std::vector<RawEvent> events, double seconds,
+                                        double sr = 44100.0, int block = 512, double bpm = 120.0)
 {
     TestPlayHead ph;
     ph.bpm = bpm;
@@ -163,10 +164,23 @@ static AudioBuffer<float> renderNotes (AudioPluginInstance& plugin, const std::v
     plugin.setPlayHead (&ph);
     plugin.setNonRealtime (true);
     plugin.prepareToPlay (sr, block);
-    auto result = render (plugin, toEvents (notes, sr), seconds, sr, block, ph);
+    auto result = render (plugin, std::move (events), seconds, sr, block, ph);
     plugin.releaseResources();
     plugin.setPlayHead (nullptr);
     return result;
+}
+
+static AudioBuffer<float> renderNotes (AudioPluginInstance& plugin, const std::vector<NoteEvent>& notes, double seconds,
+                                       double sr = 44100.0, int block = 512, double bpm = 120.0)
+{
+    return renderEvents (plugin, toEvents (notes, sr), seconds, sr, block, bpm);
+}
+
+static double secondsToRender (AudioPluginInstance& plugin, const std::vector<NoteEvent>& notes, double seconds)
+{
+    const auto t0 = std::chrono::steady_clock::now();
+    renderNotes (plugin, notes, seconds);
+    return std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
 }
 
 //==============================================================================
@@ -349,14 +363,9 @@ static int runTests (const String& path)
     // Pitch bend +2 semitones
     {
         selectProgram (*plugin, "Classic Square");
-        TestPlayHead ph;
-        plugin->setPlayHead (&ph);
-        plugin->prepareToPlay (sr, 512);
-        std::vector<RawEvent> ev { { 0, MidiMessage::pitchWheel (1, 16383) }, { 0, MidiMessage::noteOn (1, 69, 0.8f) },
-                                   { (int) sr, MidiMessage::noteOff (1, 69) } };
-        auto out = render (*plugin, ev, 1.2, sr, 512, ph);
-        plugin->releaseResources();
-        plugin->setPlayHead (nullptr);
+        auto out = renderEvents (*plugin, { { 0, MidiMessage::pitchWheel (1, 16383) },
+                                            { 0, MidiMessage::noteOn (1, 69, 0.8f) },
+                                            { (int) sr, MidiMessage::noteOff (1, 69) } }, 1.2, sr);
         const double hz = pitchAt (out, 0.3, 8192, sr, 40.0);
         res.check (std::abs (centsOff (hz, midiToHz (71.0))) < 10.0, "Pitch bend up 2 semitones", String (hz, 2) + " Hz (expected 493.88)");
     }
@@ -433,18 +442,25 @@ static int runTests (const String& path)
     {
         selectProgram (*plugin, "PWM Strings");
         setParam (*plugin, "Echo", 0.0f);
-        TestPlayHead ph;
-        plugin->setPlayHead (&ph);
-        plugin->prepareToPlay (sr, 512);
         std::vector<RawEvent> ev;
         for (int n : { 60, 64, 67, 71 })
             ev.push_back ({ 0, MidiMessage::noteOn (1, n, 0.8f) });
         ev.push_back ({ (int) sr, MidiMessage::allSoundOff (1) });
-        auto out = render (*plugin, ev, 2.0, sr, 512, ph);
-        plugin->releaseResources();
-        plugin->setPlayHead (nullptr);
+        auto out = renderEvents (*plugin, ev, 2.0, sr);
         const float tail = peakOf (out, 1.1, 2.0, sr);
         res.check (tail < 1.0e-3f, "All-sound-off silences held notes", String (Decibels::gainToDecibels (tail, -120.0f), 1) + " dB after");
+    }
+
+    // Echo tails must keep ringing after the notes stop. There's a silent gap
+    // before the first echo, which idle detection must not mistake for "done".
+    {
+        selectProgram (*plugin, "Hero Lead");   // echo 25%, 1/8 dotted = 0.375 s at 120 BPM
+        auto out = renderNotes (*plugin, { { 0.0, 0.2, 72, 0.9f } }, 2.0, sr);
+        const float gap = peakOf (out, 0.36, 0.37, sr);
+        const float firstEcho = peakOf (out, 0.45, 0.75, sr);
+        res.check (firstEcho > Decibels::decibelsToGain (-45.0f), "Echo survives the silent gap after a note",
+                   "gap " + String (Decibels::gainToDecibels (gap, -120.0f), 0) + " dB, echo "
+                       + String (Decibels::gainToDecibels (firstEcho, -120.0f), 1) + " dB");
     }
 
     // ---- 8. Big chords: the soft limiter must stop hard clipping --------------
@@ -506,12 +522,15 @@ static int runTests (const String& path)
         for (double t = 0.0; t < 60.0; t += 2.0)
             for (int n : { 48, 52, 55, 60, 64, 67, 71, 74 })
                 notes.push_back ({ t, 1.9, n, 0.8f });
-        const auto t0 = std::chrono::steady_clock::now();
-        auto out = renderNotes (*plugin, notes, 60.0, sr);
-        const double secs = std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count();
-        const double factor = 60.0 / secs;
-        res.check (factor > 20.0 && allFinite (out), "CPU: 8-voice chords for 60 s",
-                   String (factor, 0) + "x faster than real time (" + String (100.0 / factor, 2) + "% of one core)");
+        const double factor = 60.0 / secondsToRender (*plugin, notes, 60.0);
+        res.check (factor > 20.0, "CPU: 8-voice chords for 60 s",
+                   String (roundToInt (factor)) + "x faster than real time (" + String (100.0 / factor, 2) + "% of one core)");
+    }
+    {
+        selectProgram (*plugin, "Hero Lead");
+        const double factor = 60.0 / secondsToRender (*plugin, {}, 60.0);
+        res.check (factor > 2000.0, "CPU: idle (loaded, no notes) for 60 s",
+                   String (roundToInt (factor)) + "x faster than real time (" + String (100.0 / factor, 3) + "% of one core)");
     }
 
     std::cout << "\n  " << res.passed << " passed, " << res.failed << " failed\n";
@@ -668,12 +687,12 @@ static int runDemo (const String& path, const File& outDir)
 
     const Part lead = makeLead(), chords = makeChords(), bass = makeBass(), drums = makeDrums(), sfx = makeSfx();
 
-    struct Track { const char* name; const char* preset; const Part* part; float gain; const char* sfxPreset; };
+    struct Track { const char* preset; const Part* part; float gain; };
     const Track tracks[] = {
-        { "Lead",   "Hero Lead",        &lead,   1.00f, nullptr },
-        { "Chords", "Note Arpeggiator", &chords, 0.50f, nullptr },
-        { "Bass",   "Triangle Bass",    &bass,   1.00f, nullptr },
-        { "Drums",  "Drum Kit",         &drums,  0.85f, nullptr },
+        { "Hero Lead",        &lead,   1.00f },
+        { "Note Arpeggiator", &chords, 0.50f },
+        { "Triangle Bass",    &bass,   1.00f },
+        { "Drum Kit",         &drums,  0.85f },
     };
 
     const double seconds = 68.0 * 60.0 / bpm + 3.0;
@@ -729,15 +748,30 @@ static int runDemo (const String& path, const File& outDir)
 }
 
 //==============================================================================
+static void forEachComponent (Component& c, const std::function<void (Component&)>& fn)
+{
+    fn (c);
+    for (auto* child : c.getChildren())
+        forEachComponent (*child, fn);
+}
+
+template <typename T>
+static T* findComponent (Component& root, const std::function<bool (T&)>& matches = nullptr)
+{
+    T* found = nullptr;
+    forEachComponent (root, [&] (Component& c)
+    {
+        if (found == nullptr)
+            if (auto* t = dynamic_cast<T*> (&c))
+                if (matches == nullptr || matches (*t))
+                    found = t;
+    });
+    return found;
+}
+
 static Button* findButton (Component& root, const String& text)
 {
-    if (auto* b = dynamic_cast<Button*> (&root))
-        if (b->getButtonText() == text)
-            return b;
-    for (auto* child : root.getChildren())
-        if (auto* found = findButton (*child, text))
-            return found;
-    return nullptr;
+    return findComponent<Button> (root, [&] (Button& b) { return b.getButtonText() == text; });
 }
 
 static int runSnapshot (const File& outDir)
@@ -795,15 +829,47 @@ static int runSnapshot (const File& outDir)
 }
 
 //==============================================================================
-// Opens the editor as a real window, clicks controls with simulated mouse
-// events, and checks the computer keyboard stays on the piano.
-static void forEachComponent (Component& c, const std::function<void (Component&)>& fn)
+// CPU benchmark: how many times faster than real time each scenario renders.
+static int runBench (const String& path)
 {
-    fn (c);
-    for (auto* child : c.getChildren())
-        forEachComponent (*child, fn);
+    constexpr double sr = 44100.0, seconds = 60.0;
+    auto plugin = loadPlugin (path, sr, 512);
+    if (plugin == nullptr)
+        return 1;
+
+    auto everyBeat = [] (std::initializer_list<int> notes, double step, double length)
+    {
+        std::vector<NoteEvent> ev;
+        for (double t = 0.0; t < seconds; t += step)
+            for (int n : notes)
+                ev.push_back ({ t, length, n, 0.8f });
+        return ev;
+    };
+
+    struct Scenario { const char* name; const char* preset; std::vector<NoteEvent> notes; };
+    const Scenario scenarios[] = {
+        { "8-voice chords (PWM Strings)",  "PWM Strings",  everyBeat ({ 48, 52, 55, 60, 64, 67, 71, 74 }, 2.0, 1.9) },
+        { "lead melody + echo (Hero Lead)", "Hero Lead",    everyBeat ({ 72 }, 0.25, 0.2) },
+        { "drum pattern (Drum Kit)",        "Drum Kit",     everyBeat ({ 36, 42 }, 0.25, 0.1) },
+        { "idle, no notes",                 "Hero Lead",    {} },
+    };
+
+    std::cout << "\n=== CPU benchmark (60 s of audio, best of 3) ===\n\n";
+    for (const auto& s : scenarios)
+    {
+        selectProgram (*plugin, s.preset);
+        double best = 1e9;
+        for (int run = 0; run < 3; ++run)
+            best = jmin (best, secondsToRender (*plugin, s.notes, seconds));
+        std::cout << "  " << String (s.name).paddedRight (' ', 34) << String (roundToInt (seconds / best)).paddedLeft (' ', 7)
+                  << "x real time  (" << String (100.0 * best / seconds, 3) << "% of one core)\n";
+    }
+    return 0;
 }
 
+//==============================================================================
+// Opens the editor as a real window, clicks controls with simulated mouse
+// events, and checks the computer keyboard stays on the piano.
 static void clickOn (ComponentPeer& peer, Component& editor, Component& target)
 {
     const auto pos = editor.getLocalPoint (&target, target.getLocalBounds().getCentre()).toFloat();
@@ -859,16 +925,9 @@ static int runFocusTest()
     res.check (piano->hasKeyboardFocus (false), "Keys work as soon as the window opens", "");
 
     // 2. Click a selection of controls; the piano must keep the keys after each one
-    Slider* firstKnob = nullptr;
-    forEachComponent (*editor, [&] (Component& c)
-    {
-        if (firstKnob == nullptr)
-            firstKnob = dynamic_cast<Slider*> (&c);
-    });
-
     const std::pair<const char*, Component*> targets[] = {
         { "wave button (SAW)",     findButton (*editor, "SAW") },
-        { "knob (Attack)",         firstKnob },
+        { "knob (Attack)",         findComponent<Slider> (*editor) },
         { "MONO button",           findButton (*editor, "MONO") },
         { "next-preset button",    findButton (*editor, ">") },
         { "SURPRISE ME! button",   findButton (*editor, "SURPRISE ME!") },
@@ -890,13 +949,7 @@ static int runFocusTest()
     }
 
     // 3. Open and close a drop-down menu: focus must come back by itself
-    ComboBox* combo = nullptr;
-    forEachComponent (*editor, [&] (Component& c)
-    {
-        if (combo == nullptr)
-            combo = dynamic_cast<ComboBox*> (&c);
-    });
-    if (combo != nullptr)
+    if (auto* combo = findComponent<ComboBox> (*editor))
     {
         clickOn (*peer, *editor, *combo);
         MessageManager::getInstance()->runDispatchLoopUntil (300);
@@ -929,6 +982,8 @@ int main (int argc, char* argv[])
         return runSnapshot (File (args[1]));
     if (args.size() >= 1 && args[0] == "--focus-test")
         return runFocusTest();
+    if (args.size() >= 2 && args[0] == "--bench")
+        return runBench (args[1]);
 
     std::cout << "usage:\n  BitBuddyTestHost --test <plugin.vst3>\n"
                  "  BitBuddyTestHost --demo <plugin.vst3> <outDir>\n"

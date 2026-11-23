@@ -32,6 +32,11 @@ public:
     void prepare (double sampleRate) noexcept
     {
         sr = sampleRate;
+        reset();
+    }
+
+    void reset() noexcept
+    {
         phase = 1.0;
         heldSample = 0.0f;
     }
@@ -81,6 +86,15 @@ public:
         writePos = 0;
         delay = target = (float) (sr * 0.3);
     }
+
+    void clear() noexcept
+    {
+        std::fill (left.begin(), left.end(), 0.0f);
+        std::fill (right.begin(), right.end(), 0.0f);
+    }
+
+    /** Longest possible echo delay. After this much silence the echo is empty. */
+    int getMaxDelaySamples() const noexcept { return size; }
 
     void setTimeSeconds (double seconds) noexcept
     {

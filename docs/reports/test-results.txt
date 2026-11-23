@@ -51,8 +51,10 @@ plugin: C:\Claude\BitBuddy\build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
   -- drum kit --
   PASS  All 12 drums sound and decay to silence     12/12 ok
   PASS  All-sound-off silences held notes           -120.0 dB after
+  PASS  Echo survives the silent gap after a note   gap -120 dB, echo -23.9 dB
   PASS  8-note chord at max volume stays below 0 dBFSpeak 0.9800
   PASS  Tweaked preset survives save + reload       1576 bytes; wave 0.429/0.429 attack 0.420/0.420 echo 0.330/0.330, program Hero Lead
-  PASS  CPU: 8-voice chords for 60 s                84.93x faster than real time (1.18% of one core)
+  PASS  CPU: 8-voice chords for 60 s                114x faster than real time (0.88% of one core)
+  PASS  CPU: idle (loaded, no notes) for 60 s       3517x faster than real time (0.028% of one core)
 
-  44 passed, 0 failed
+  46 passed, 0 failed

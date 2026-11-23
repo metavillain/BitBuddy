@@ -52,13 +52,20 @@ public:
     void setModWheel (float amount01) noexcept   { modWheel = amount01; }
     void setSustainPedal (bool isDown);
 
-    /** Adds numSamples of mono audio into out. */
-    void render (float* out, int numSamples) noexcept;
+    /** Adds numSamples of mono audio into out. Returns false (and does no work)
+        when nothing is playing. */
+    bool render (float* out, int numSamples) noexcept;
 
-    int getNumActiveVoices() const noexcept;
+    /** True when no voice is sounding. */
+    bool isIdle() const noexcept;
 
 private:
     enum class Stage { Idle, Attack, Decay, Sustain, Release };
+
+    // Glide, sweep and vibrato are updated once every kControlInterval samples
+    // (~2.8 kHz). The original chips did it 60 times a second, so this is still
+    // perfectly smooth, but the expensive pitch -> frequency maths runs 16x less often.
+    static constexpr int kControlInterval = 16;
 
     struct Voice
     {
@@ -70,6 +77,11 @@ private:
 
         float pitch = 60.0f, targetPitch = 60.0f;   // MIDI note numbers (fractional)
         double t = 0.0;                              // seconds since note start
+
+        float ctrlNote = 60.0f;          // pitch incl. glide, sweep, vibrato, bend (control rate)
+        int ctrlCountdown = 0;           // samples until the next control-rate update
+        float cachedNote = -1000.0f;     // note the frequency below was computed for
+        float hz = 0.0f, inc = 0.0f;     // frequency, and phase increment per sample
 
         double phase = 0.0, lfoPhase = 0.25, pwmPhase = 0.0;
         std::uint32_t lfsr = 1;
@@ -93,7 +105,8 @@ private:
 
     float renderTone (Voice&) noexcept;
     float renderDrum (Voice&) noexcept;
-    float oscillate (Voice&, float hz) noexcept;
+    void updateModulation (Voice&) noexcept;
+    float oscillate (Voice&) noexcept;
     float noiseStep (Voice&, double clockHz, bool shortMode) noexcept;
 
     void startVoice (Voice&, int note, float velocity);
@@ -120,7 +133,9 @@ private:
     std::uint64_t ageCounter = 0;
     int lastNote = -1;
 
-    float attackStep = 0, decayStep = 0, releaseStep = 0, glideCoeff = 1.0f;
+    float attackStep = 0, decayStep = 0, releaseStep = 0;
+    bool glideOn = false;
+    float glideCoeff = 1.0f;   // per control-rate update
     double arpStepSamples = 2756.0;
     float chokeMul = 0.99f;
 

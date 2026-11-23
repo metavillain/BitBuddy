@@ -122,16 +122,15 @@ void Knob::resized()
 }
 
 //==============================================================================
-ChoiceButtons::ChoiceButtons (juce::RangedAudioParameter& param, const juce::StringArray& labels, juce::Colour accent,
-                              const juce::StringArray& hints, bool isVertical)
+ParamButtons::ParamButtons (juce::RangedAudioParameter& param, int count, const Factory& makeButton,
+                            bool isVertical, int gapPixels)
     : vertical (isVertical),
+      gap (gapPixels),
       attachment (param, [this] (float v) { update (v); })
 {
-    for (int i = 0; i < labels.size(); ++i)
+    for (int i = 0; i < count; ++i)
     {
-        auto* b = buttons.add (new juce::TextButton (labels[i]));
-        b->setColour (juce::TextButton::buttonOnColourId, accent);
-        b->setTooltip (hints[i]);
+        auto* b = buttons.add (makeButton (i));
         b->onClick = [this, i] { attachment.setValueAsCompleteGesture ((float) i); };
         addAndMakeVisible (b);
     }
@@ -139,14 +138,14 @@ ChoiceButtons::ChoiceButtons (juce::RangedAudioParameter& param, const juce::Str
     attachment.sendInitialUpdate();
 }
 
-void ChoiceButtons::update (float value)
+void ParamButtons::update (float value)
 {
     const int idx = juce::roundToInt (value);
     for (int i = 0; i < buttons.size(); ++i)
         buttons[i]->setToggleState (i == idx, juce::dontSendNotification);
 }
 
-void ChoiceButtons::resized()
+void ParamButtons::resized()
 {
     auto r = getLocalBounds();
     const int n = buttons.size();
@@ -154,10 +153,21 @@ void ChoiceButtons::resized()
     for (int i = 0; i < n; ++i)
     {
         if (vertical)
-            buttons[i]->setBounds (r.removeFromTop (r.getHeight() / (n - i)).reduced (0, 2));
+            buttons[i]->setBounds (r.removeFromTop (r.getHeight() / (n - i)).reduced (0, gap));
         else
-            buttons[i]->setBounds (r.removeFromLeft (r.getWidth() / (n - i)).reduced (2, 0));
+            buttons[i]->setBounds (r.removeFromLeft (r.getWidth() / (n - i)).reduced (gap, 0));
     }
+}
+
+static ParamButtons::Factory textButtons (const juce::StringArray& labels, const juce::StringArray& hints, juce::Colour accent)
+{
+    return [=] (int i) -> juce::Button*
+    {
+        auto* b = new juce::TextButton (labels[i]);
+        b->setColour (juce::TextButton::buttonOnColourId, accent);
+        b->setTooltip (hints[i]);
+        return b;
+    };
 }
 
 //==============================================================================
@@ -191,33 +201,14 @@ void WaveButton::paintButton (juce::Graphics& g, bool over, bool down)
     g.drawFittedText (getButtonText(), labelArea.toNearestInt(), juce::Justification::centred, 1, 0.6f);
 }
 
-WaveSelector::WaveSelector (juce::RangedAudioParameter& param, juce::Colour accent)
-    : attachment (param, [this] (float v) { update (v); })
+static ParamButtons::Factory waveButtons (juce::Colour accent)
 {
-    for (int i = 0; i < 8; ++i)
+    return [=] (int i) -> juce::Button*
     {
-        auto* b = buttons.add (new WaveButton (i, kWaveShort[i], accent));
+        auto* b = new WaveButton (i, kWaveShort[i], accent);
         b->setTooltip (kWaveInfo[i]);
-        b->onClick = [this, i] { attachment.setValueAsCompleteGesture ((float) i); };
-        addAndMakeVisible (b);
-    }
-
-    attachment.sendInitialUpdate();
-}
-
-void WaveSelector::update (float value)
-{
-    const int idx = juce::roundToInt (value);
-    for (int i = 0; i < buttons.size(); ++i)
-        buttons[i]->setToggleState (i == idx, juce::dontSendNotification);
-}
-
-void WaveSelector::resized()
-{
-    auto r = getLocalBounds();
-    const int n = buttons.size();
-    for (int i = 0; i < n; ++i)
-        buttons[i]->setBounds (r.removeFromLeft (r.getWidth() / (n - i)).reduced (3, 0));
+        return b;
+    };
 }
 
 //==============================================================================
@@ -231,6 +222,19 @@ void Scope::refresh()
 {
     source.copyLatest (samples.data(), (int) samples.size());
     ++frame;
+
+    // Silence only needs a redraw when the "PLAY A NOTE!" text blinks
+    float peak = 0.0f;
+    for (auto s : samples)
+        peak = juce::jmax (peak, std::abs (s));
+
+    const bool silent = peak < 0.002f;
+    const bool blinkOn = (frame / 20) % 2 == 0;
+    if (silent && wasSilent && blinkOn == lastBlink)
+        return;
+
+    wasSilent = silent;
+    lastBlink = blinkOn;
     repaint();
 }
 
@@ -486,17 +490,19 @@ void HelpOverlay::paint (juce::Graphics& g)
 MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     : proc (p),
       state (p.apvts),
-      waveSelector (*state.getParameter (ids::wave), pal::yellow),
+      waveSelector (*state.getParameter (ids::wave), 8, waveButtons (pal::yellow), false, 3),
       scope (p.scope),
       attack  (state, ids::attack,  "ATTACK",  pal::lime, "ATTACK: how quickly a note fades in. Low = instant 'blip', high = slow swell."),
       decay   (state, ids::decay,   "DECAY",   pal::lime, "DECAY: how fast the note falls from its loudest point down to the Sustain level."),
       sustain (state, ids::sustain, "SUSTAIN", pal::lime, "SUSTAIN: the volume a note holds while you keep the key down. 0% = every note is a short blip."),
       release (state, ids::release, "RELEASE", pal::lime, "RELEASE: how long a note takes to fade away after you let go of the key."),
       envelopeView (state),
-      arpModeButtons (*state.getParameter (ids::arpMode), { "OFF", "CHORD", "NOTES" }, pal::cyan,
-                      { "ARP OFF: normal notes - what you play is what you hear.",
-                        "CHORD: hold ONE key and BitBuddy flips through a whole chord super fast. The classic 8-bit trick - old chips could only play one note per channel!",
-                        "NOTES: hold several keys and they play one after another as a pattern (an 'arpeggio')." }),
+      arpModeButtons (*state.getParameter (ids::arpMode), 3,
+                      textButtons ({ "OFF", "CHORD", "NOTES" },
+                                   { "ARP OFF: normal notes - what you play is what you hear.",
+                                     "CHORD: hold ONE key and BitBuddy flips through a whole chord super fast. The classic 8-bit trick - old chips could only play one note per channel!",
+                                     "NOTES: hold several keys and they play one after another as a pattern (an 'arpeggio')." },
+                                   pal::cyan)),
       octaves (state, ids::arpOctaves, "OCTAVES", pal::cyan, "OCTAVES: repeats the arpeggio 1, 2 or 3 octaves higher for bigger, sparklier patterns."),
       vibDepth  (state, ids::vibDepth,  "VIBRATO",  pal::orange, "VIBRATO: wobbles the pitch up and down like a singer. Game leads use this a LOT. (Your mod wheel adds vibrato too.)"),
       vibRate   (state, ids::vibRate,   "VIB RATE", pal::orange, "VIB RATE: how fast the vibrato wobbles."),
@@ -505,9 +511,11 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
       sweepTime (state, ids::sweepTime, "SWP TIME", pal::orange, "SWEEP TIME: how long the Sweep slide takes."),
       pwm       (state, ids::pwm,       "PWM",      pal::orange, "PWM (pulse width modulation): slowly changes the width of the pulse wave for a lush, chorus-y sound. Works on Square and Pulse waves - a classic Commodore 64 trick!"),
       glide     (state, ids::glide,     "GLIDE",    pal::orange, "GLIDE: notes slide smoothly into each other instead of jumping. Works best with MONO."),
-      voiceModeButtons (*state.getParameter (ids::voiceMode), { "POLY", "MONO" }, pal::orange,
-                        { "POLY: play chords - up to 8 notes at once.",
-                          "MONO: one note at a time, like a real sound-chip channel. Great for bass and leads with Glide." },
+      voiceModeButtons (*state.getParameter (ids::voiceMode), 2,
+                        textButtons ({ "POLY", "MONO" },
+                                     { "POLY: play chords - up to 8 notes at once.",
+                                       "MONO: one note at a time, like a real sound-chip channel. Great for bass and leads with Glide." },
+                                     pal::orange),
                         true),
       bits         (state, ids::bits,         "BITS",    pal::sky, "BITS: lowers the audio resolution. 16-bit = clean, 8-bit = classic, 4-bit and below = crunchy and gritty!"),
       rate         (state, ids::rate,         "RATE",    pal::sky, "RATE: lowers the sample rate for a grainy, crunchy old-hardware sound. Turn it all the way up ('Clean') to switch it off."),

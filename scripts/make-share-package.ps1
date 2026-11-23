@@ -1,6 +1,6 @@
 # Builds a self-contained zip you can send to a friend (Windows 10/11, 64-bit).
 #
-#   powershell -ExecutionPolicy Bypass -File tools\make-share-package.ps1
+#   powershell -ExecutionPolicy Bypass -File scripts\make-share-package.ps1
 #
 # Output: dist\BitBuddy-<version>-Windows.zip
 # Needs a Release build first, and commits the source snapshot from git HEAD.

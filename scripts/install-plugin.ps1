@@ -1,6 +1,6 @@
 # Installs BitBuddy so every DAW can find it.
 #
-#   Right-click this file -> "Run with PowerShell"
+#   Right-click this file (scripts\install-plugin.ps1) -> "Run with PowerShell"
 #   (Windows will ask for admin permission - click Yes.)
 #
 # It copies the built plugin into the standard system folder:
@@ -9,7 +9,7 @@
 #   %LOCALAPPDATA%\Programs\Common\VST3\BitBuddy.vst3
 
 $ErrorActionPreference = 'Stop'
-$src = Join-Path $PSScriptRoot 'build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3'
+$src = Join-Path (Split-Path $PSScriptRoot -Parent) 'build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3'
 if (-not (Test-Path $src)) { throw "Build the plugin first: $src not found" }
 
 # Per-user folder (no admin)

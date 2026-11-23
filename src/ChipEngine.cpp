@@ -132,7 +132,8 @@ void ChipEngine::setParams (const EngineParams& np)
     attackStep  = (float) (1.0 / (std::max (0.001f, p.attack)  * sr));
     decayStep   = (float) (1.0 / (std::max (0.001f, p.decay)   * sr));
     releaseStep = (float) (1.0 / (std::max (0.001f, p.release) * sr));
-    glideCoeff  = p.glide < 0.001f ? 1.0f : (float) (1.0 - std::exp (-1.0 / (p.glide * 0.25 * sr)));
+    glideOn     = p.glide >= 0.001f;
+    glideCoeff  = glideOn ? (float) (1.0 - std::exp (-(double) kControlInterval / (p.glide * 0.25 * sr))) : 1.0f;
     arpStepSamples = std::max (16.0, p.arpStepSeconds * sr);
 
     if (p.arpChord != builtChord || p.arpOctaves != builtChordOctaves)
@@ -204,8 +205,9 @@ void ChipEngine::noteOn (int note, float velocity)
             v.targetPitch = (float) note;
             v.note = note;
             v.held = true;
-            if (glideCoeff >= 1.0f)
+            if (! glideOn)
                 v.pitch = (float) note;
+            v.ctrlCountdown = 0;   // apply the new pitch on the very next sample
             lastNote = note;
         }
         else
@@ -262,8 +264,9 @@ void ChipEngine::doNoteOff (int note)
                 const int back = held[(size_t) numHeld - 1].note;
                 v.targetPitch = (float) back;
                 v.note = back;
-                if (glideCoeff >= 1.0f)
+                if (! glideOn)
                     v.pitch = (float) back;
+                v.ctrlCountdown = 0;
                 lastNote = back;
             }
             else
@@ -316,12 +319,14 @@ void ChipEngine::allNotesOff (bool immediate)
     }
 }
 
-int ChipEngine::getNumActiveVoices() const noexcept
+bool ChipEngine::isIdle() const noexcept
 {
-    int n = 0;
+    if (heldArpRunning)
+        return false;
     for (auto& v : voices)
-        n += v.active ? 1 : 0;
-    return n;
+        if (v.active)
+            return false;
+    return true;
 }
 
 //==============================================================================
@@ -470,12 +475,13 @@ void ChipEngine::startVoice (Voice& v, int note, float velocity)
     v.age = ++ageCounter;
 
     v.targetPitch = (float) note;
-    if (glideCoeff < 1.0f && lastNote >= 0)
+    if (glideOn && lastNote >= 0)
         v.pitch = wasActive ? v.pitch : (float) lastNote;   // glide in from the last note
     else
         v.pitch = (float) note;
 
     v.t = 0.0;
+    v.ctrlCountdown = 0;
     if (! wasActive)
     {
         v.phase = 0.0;
@@ -501,9 +507,10 @@ void ChipEngine::retrigger (Voice& v, int note)
 {
     v.targetPitch = (float) note;
     v.note = note;
-    if (glideCoeff >= 1.0f)
+    if (! glideOn)
         v.pitch = (float) note;
     v.t = 0.0;
+    v.ctrlCountdown = 0;
     v.lfoPhase = 0.25;
     v.stage = Stage::Attack;   // restart from the current level -> no click
     v.held = true;
@@ -561,8 +568,11 @@ void ChipEngine::releaseAllTones() noexcept
 }
 
 //==============================================================================
-void ChipEngine::render (float* out, int numSamples) noexcept
+bool ChipEngine::render (float* out, int numSamples) noexcept
 {
+    if (isIdle())
+        return false;   // nothing playing: costs nothing
+
     for (int i = 0; i < numSamples; ++i)
     {
         if (heldArpRunning)
@@ -575,6 +585,7 @@ void ChipEngine::render (float* out, int numSamples) noexcept
 
         out[i] += sum;
     }
+    return true;
 }
 
 void ChipEngine::tickHeldArp() noexcept
@@ -633,13 +644,14 @@ float ChipEngine::renderTone (Voice& v) noexcept
             return 0.0f;
     }
 
-    // --- Pitch ---
-    if (glideCoeff < 1.0f)
-        v.pitch += (v.targetPitch - v.pitch) * glideCoeff;
-    else
-        v.pitch = v.targetPitch;
+    // --- Pitch: glide / sweep / vibrato at control rate, arpeggio per sample ---
+    if (--v.ctrlCountdown <= 0)
+    {
+        v.ctrlCountdown = kControlInterval;
+        updateModulation (v);
+    }
 
-    float note = v.pitch + pitchBend;
+    float note = v.ctrlNote;
 
     // Chord arpeggio: flip through the chord notes, without restarting the note
     if (p.arpMode == ArpMode::Chord)
@@ -653,6 +665,28 @@ float ChipEngine::renderTone (Voice& v) noexcept
         note += (float) chordSeq[(size_t) std::clamp (v.arpIndex, 0, chordSeqLen - 1)];
     }
 
+    // The exponential note -> frequency conversion only runs when the pitch changes
+    if (note != v.cachedNote)
+    {
+        v.cachedNote = note;
+        v.hz = noteToHz (note);
+        v.inc = std::min (v.hz * (float) invSr, 0.45f);
+    }
+
+    const float s = oscillate (v);
+    v.t += invSr;
+
+    return s * v.env * v.velocity * kVoiceGain;
+}
+
+void ChipEngine::updateModulation (Voice& v) noexcept
+{
+    if (glideOn)
+        v.pitch += (v.targetPitch - v.pitch) * glideCoeff;
+    else
+        v.pitch = v.targetPitch;
+
+    float note = v.pitch + pitchBend;
     const auto t = (float) v.t;
 
     // Pitch sweep: start sweepAmt semitones away and slide into the note
@@ -669,21 +703,19 @@ float ChipEngine::renderTone (Voice& v) noexcept
 
     if (vib > 0.0f)
     {
-        v.lfoPhase += p.vibRate * invSr;
+        v.lfoPhase += p.vibRate * invSr * kControlInterval;
         if (v.lfoPhase >= 1.0)
             v.lfoPhase -= 1.0;
         note += vib * triLfo (v.lfoPhase);
     }
 
-    const float s = oscillate (v, noteToHz (note));
-    v.t += invSr;
-
-    return s * v.env * v.velocity * kVoiceGain;
+    v.ctrlNote = note;
 }
 
-float ChipEngine::oscillate (Voice& v, float hz) noexcept
+float ChipEngine::oscillate (Voice& v) noexcept
 {
-    const float dt = std::min (hz * (float) invSr, 0.45f);
+    const float dt = v.inc;
+    const float hz = v.hz;
     float out = 0.0f;
 
     switch (p.wave)
