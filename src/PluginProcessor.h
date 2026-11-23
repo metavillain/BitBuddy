@@ -118,6 +118,19 @@ public:
     static juce::String customWaveToString (const bb::CustomWave&);
     static bool customWaveFromString (const juce::String&, bb::CustomWave&);
 
+    //==========================================================================
+    // Instrument macros (VOL / ARP / PITCH / DUTY lanes)
+    bb::Macro getMacro (int lane) const noexcept;
+    void setMacro (int lane, const bb::Macro&) noexcept;
+    void setMacroStep (int lane, int step, int value) noexcept;
+    void clearMacros() noexcept;
+    bool anyMacroOn() const noexcept;
+    /** Call when you finish editing a macro: tells the DAW the project changed. */
+    void macrosEdited();
+    /** "length|loop|v,v,v..." - how macros are saved. */
+    static juce::String macroToString (const bb::Macro&);
+    static bool macroFromString (const juce::String&, bb::Macro&);
+
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;   // on-screen keyboard -> synth
     ScopeBuffer scope;
@@ -145,6 +158,16 @@ private:
     void setParamValue (const char* id, float realValue);
 
     std::array<std::atomic<std::uint8_t>, bb::kCustomWaveSteps> customWave {};   // UI writes, audio reads
+
+    struct MacroStore
+    {
+        std::atomic<int> length { 0 }, loop { -1 };
+        std::array<std::atomic<std::int8_t>, bb::kMacroSteps> values {};
+    };
+    std::array<MacroStore, bb::kNumMacroLanes> macros;
+    void saveMacrosTo (juce::ValueTree&) const;
+    void saveMacrosTo (juce::XmlElement&) const;
+    void loadMacrosFrom (const std::function<juce::String (const juce::String&)>& getProperty);
 
     int currentProgram = 0;
     juce::String customName;

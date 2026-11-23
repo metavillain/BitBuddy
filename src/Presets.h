@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <array>
 #include <utility>
 #include <vector>
 
@@ -12,6 +13,7 @@ struct Preset
     const char* tip;   // one-line playing tip shown in the UI
     std::vector<std::pair<const char*, float>> values;   // parameter id -> real value
     const char* customWave = nullptr;                     // DRAW presets: 32 hex digits (0-F)
+    std::array<const char*, 4> macros {};                 // VOL, ARP, PITCH, DUTY: "length|loop|v,v,v..."
 };
 
 const std::vector<Preset>& factoryPresets();

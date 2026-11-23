@@ -31,6 +31,35 @@ enum class ArpMode : int { Off = 0, Chord, Notes };
 
 // Console modes copy each real chip's limits and quirks (Modern = no limits)
 enum class Console : int { Modern = 0, NES, GameBoy, C64 };
+
+// Instrument macros, like FamiTracker: little step sequences that play 60 steps
+// a second from the start of every note and shape it as it goes.
+enum MacroLaneId : int { kMacroVolume = 0, kMacroArp, kMacroPitch, kMacroDuty, kNumMacroLanes };
+constexpr int kMacroSteps = 32;
+constexpr double kMacroStepsPerSecond = 60.0;   // the NES frame rate
+
+struct MacroLaneInfo { const char* name; int minValue, maxValue, defaultValue; };
+constexpr MacroLaneInfo kMacroLanes[kNumMacroLanes] = {
+    { "VOL",   0,   15, 15 },   // volume 0..15 (like the chips' 4-bit volume)
+    { "ARP",   -12, 24, 0  },   // semitones added to the note
+    { "PITCH", -12, 12, 0  },   // fine pitch, 1/8 semitone per step
+    { "DUTY",  0,   3,  2  },   // pulse width: 12.5%, 25%, 50%, 75%
+};
+
+struct Macro
+{
+    int length = 0;                                   // 0 = this lane is off
+    int loop = -1;                                    // step to jump back to at the end (-1 = hold the last value)
+    std::array<std::int8_t, kMacroSteps> values {};
+
+    bool isOn() const noexcept { return length > 0; }
+    int valueAt (int frame) const noexcept
+    {
+        if (frame >= length)
+            frame = loop >= 0 && loop < length ? loop + (frame - length) % (length - loop) : length - 1;
+        return values[(size_t) frame];
+    }
+};
 enum class ArpPattern : int { Up = 0, Down, UpDown, Random, Once };
 
 struct EngineParams
@@ -55,6 +84,7 @@ struct EngineParams
 
     CustomWave customWave = defaultCustomWave();               // for Wave::Custom
     Console console = Console::Modern;
+    std::array<Macro, kNumMacroLanes> macros {};
 };
 
 class ChipEngine
@@ -133,10 +163,20 @@ private:
         float chokeGain = 1.0f;
 
         float gate = 0.0f;   // NES triangle: no volume control, just on / off (smoothed against clicks)
+
+        // instrument macros
+        int macroFrame = 0;
+        double macroCounter = 0.0;
+        float macroVolume = 1.0f, macroNotes = 0.0f;   // gain, semitones (arp + fine pitch)
+        int macroDuty = -1;                            // -1 = the wave's own duty
     };
 
     float renderTone (Voice&) noexcept;
     float chipLevel (Voice&) noexcept;
+    void restartMacros (Voice&) noexcept;
+    void applyMacroFrame (Voice&) noexcept;
+    bool anyMacroOn = false;
+    double macroStepSamples = 735.0;
     double noiseClock (double wantedClock) const noexcept;
     float renderDrum (Voice&) noexcept;
     void updateModulation (Voice&) noexcept;

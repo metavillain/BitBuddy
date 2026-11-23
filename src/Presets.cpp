@@ -59,6 +59,16 @@ const std::vector<Preset>& factoryPresets()
           { { wave, w::pulse25 }, { arpMode, am::chord }, { arpChord, ch::smart }, { arpSpeed, sp::hz30 },
             { sustain, 0.8f }, { release, 0.2f }, { echoMix, 0.2f }, { echoTime, et::e8d } } },
 
+        { "Macro Chord Blip", "FamiTracker-style: an ARP macro flips 0-4-7 at 60 Hz. Open MACROS on the SCREEN to see it!",
+          { { wave, w::pulse12 }, { sustain, 1.0f }, { release, 0.1f }, { echoMix, 0.15f } },
+          nullptr,
+          { "12|-1|15,15,14,13,12,11,10,9,8,7,6,5", "3|0|0,4,7", nullptr, nullptr } },
+
+        { "Macro Stutter Lead", "VOL + DUTY macros: each note stutters like a fake echo and its tone shifts.",
+          { { wave, w::square }, { sustain, 1.0f }, { release, 0.15f }, { vibDepth, 0.25f }, { vibDelay, 0.35f } },
+          nullptr,
+          { "20|-1|15,15,13,11,0,0,11,10,9,0,0,8,7,6,0,0,6,6,6,6", nullptr, "6|-1|-6,-4,-2,-1,0,0", "6|-1|0,0,1,1,2,2" } },
+
         { "Power Arp", "Rock power chords, bouncing across two octaves.",
           { { wave, w::pulse12 }, { arpMode, am::chord }, { arpChord, ch::power }, { arpOctaves, 2.0f },
             { arpPattern, pat::upDown }, { arpSpeed, sp::t32 }, { echoMix, 0.2f } } },

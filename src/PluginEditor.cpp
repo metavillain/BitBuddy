@@ -493,7 +493,18 @@ void WaveDrawer::drawAt (juce::Point<float> pos, bool connectToLast)
 void WaveDrawer::mouseDown (const juce::MouseEvent& e)
 {
     if (gridArea().expanded (4.0f).contains (e.position))
+    {
+        useDrawWave();
         drawAt (e.position, false);
+    }
+}
+
+// Drawing only makes sense if you can hear it: switch the sound to DRAW
+void WaveDrawer::useDrawWave()
+{
+    if (auto* wave = proc.apvts.getParameter (ids::wave))
+        if (juce::roundToInt (wave->convertFrom0to1 (wave->getValue())) != (int) Wave::Custom)
+            wave->setValueNotifyingHost (wave->convertTo0to1 ((float) Wave::Custom));
 }
 
 void WaveDrawer::mouseDrag (const juce::MouseEvent& e)
@@ -528,9 +539,272 @@ void WaveDrawer::applyShape (int shape)
         }
         w[(size_t) i] = (std::uint8_t) juce::jlimit (0, 15, juce::roundToInt (v));
     }
+    useDrawWave();
     proc.setCustomWave (w);
     proc.customWaveEdited();
     refresh();
+}
+
+//==============================================================================
+namespace
+{
+const juce::Colour kLaneColours[kNumMacroLanes] = { pal::lime, pal::cyan, pal::orange, pal::yellow };
+const char* const kLaneHints[kNumMacroLanes] = {
+    "VOL macro: the volume of each step (0-15). Fades, stutters and fake echoes - draw it going down for a 'pluck'.",
+    "ARP macro: semitones added to the note at each step. 0,4,7 looping = the classic NES chord; big jumps = blips and coins.",
+    "PITCH macro: small pitch bends (1/8 semitone per step). Scoop into notes, warble, or wobble like a broken tape.",
+    "DUTY macro: the pulse width at each step (12.5 / 25 / 50 / 75%) for SQUARE and PULSE waves. Tone that changes as it plays!",
+};
+} // namespace
+
+MacroEditor::MacroEditor (BitBuddyProcessor& p) : proc (p)
+{
+    setTooltip ("MACROS: draw how each note changes over time - 60 steps every second, like FamiTracker. Pick a lane, "
+                "turn it ON, click + drag to draw. LEN = number of steps; click the strip at the bottom to set where it loops.");
+
+    for (int i = 0; i < kNumMacroLanes; ++i)
+    {
+        auto* b = laneButtons.add (new juce::TextButton (kMacroLanes[i].name));
+        b->setTooltip (kLaneHints[i]);
+        b->setColour (juce::TextButton::buttonOnColourId, kLaneColours[i]);
+        b->onClick = [this, i] { selectLane (i); };
+        addAndMakeVisible (b);
+    }
+
+    onButton.setTooltip ("ON: use this lane. Lanes that are off don't change the sound.");
+    onButton.onClick = [this] { setLength (shown[(size_t) lane].isOn() ? 0 : lengthWhenOff[(size_t) lane]); };
+    minusButton.setTooltip ("LEN -: one step shorter.");
+    minusButton.onClick = [this] { setLength (juce::jmax (1, shown[(size_t) lane].length - 1)); };
+    plusButton.setTooltip ("LEN +: one step longer (up to 32).");
+    plusButton.onClick = [this] { setLength (juce::jmin (kMacroSteps, juce::jmax (1, shown[(size_t) lane].length) + 1)); };
+    clearButton.setTooltip ("CLR: flatten this lane back to its starting value.");
+    clearButton.onClick = [this]
+    {
+        for (int s = 0; s < kMacroSteps; ++s)
+            proc.setMacroStep (lane, s, kMacroLanes[lane].defaultValue);
+        proc.macrosEdited();
+        refresh();
+    };
+
+    lengthLabel.setFont (pixelFont (6.0f));
+    lengthLabel.setJustificationType (juce::Justification::centred);
+    lengthLabel.setColour (juce::Label::textColourId, pal::white);
+
+    for (auto* c : { (juce::Component*) &onButton, (juce::Component*) &minusButton, (juce::Component*) &plusButton,
+                     (juce::Component*) &clearButton, (juce::Component*) &lengthLabel })
+        addAndMakeVisible (c);
+
+    for (auto* b : { &onButton, &minusButton, &plusButton, &clearButton })
+    {
+        b->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff0b1a14));
+        b->setColour (juce::TextButton::textColourOffId, pal::white);
+    }
+    selectLane (0);
+}
+
+void MacroEditor::resized()
+{
+    auto row = getLocalBounds().removeFromTop (17).reduced (0, 1);
+    for (auto* b : laneButtons)
+        b->setBounds (row.removeFromLeft (row.getWidth() >= 300 ? 46 : 40).reduced (1, 0));
+    row.removeFromLeft (6);
+    onButton.setBounds (row.removeFromLeft (30).reduced (1, 0));
+    row.removeFromLeft (6);
+    minusButton.setBounds (row.removeFromLeft (18).reduced (1, 0));
+    lengthLabel.setBounds (row.removeFromLeft (46));
+    plusButton.setBounds (row.removeFromLeft (18).reduced (1, 0));
+    clearButton.setBounds (row.removeFromRight (34).reduced (1, 0));
+}
+
+juce::Rectangle<float> MacroEditor::gridArea() const
+{
+    return getLocalBounds().toFloat().withTrimmedTop (20.0f).withTrimmedBottom (14.0f).reduced (4.0f, 2.0f);
+}
+
+juce::Rectangle<float> MacroEditor::loopArea() const
+{
+    const auto grid = gridArea();
+    return { grid.getX(), grid.getBottom() + 3.0f, grid.getWidth(), 9.0f };
+}
+
+int MacroEditor::stepAt (float x) const
+{
+    const auto grid = gridArea();
+    return juce::jlimit (0, kMacroSteps - 1, (int) ((x - grid.getX()) / grid.getWidth() * kMacroSteps));
+}
+
+void MacroEditor::selectLane (int newLane)
+{
+    lane = juce::jlimit (0, kNumMacroLanes - 1, newLane);
+    updateButtons();
+    repaint();
+}
+
+void MacroEditor::updateButtons()
+{
+    for (int i = 0; i < laneButtons.size(); ++i)
+    {
+        laneButtons[i]->setToggleState (i == lane, juce::dontSendNotification);
+        laneButtons[i]->setColour (juce::TextButton::buttonColourId,
+                                   shown[(size_t) i].isOn() ? kLaneColours[i].withAlpha (0.35f) : juce::Colour (0xff0b1a14));
+        laneButtons[i]->setColour (juce::TextButton::textColourOffId, kLaneColours[i]);
+    }
+    const auto& m = shown[(size_t) lane];
+    onButton.setButtonText (m.isOn() ? "ON" : "OFF");
+    onButton.setColour (juce::TextButton::buttonColourId, m.isOn() ? kLaneColours[lane].withAlpha (0.6f) : juce::Colour (0xff0b1a14));
+    lengthLabel.setText ("LEN " + juce::String (m.isOn() ? m.length : 0), juce::dontSendNotification);
+}
+
+void MacroEditor::refresh()
+{
+    bool changed = false;
+    for (int i = 0; i < kNumMacroLanes; ++i)
+    {
+        const auto now = proc.getMacro (i);
+        auto& old = shown[(size_t) i];
+        if (now.length != old.length || now.loop != old.loop || now.values != old.values)
+        {
+            old = now;
+            changed = true;
+        }
+    }
+    if (changed)
+    {
+        updateButtons();
+        repaint();
+    }
+}
+
+void MacroEditor::setLength (int newLength)
+{
+    auto m = proc.getMacro (lane);
+    if (m.isOn())
+        lengthWhenOff[(size_t) lane] = m.length;
+    m.length = juce::jlimit (0, kMacroSteps, newLength);
+    proc.setMacro (lane, m);
+    proc.macrosEdited();
+    refresh();
+}
+
+void MacroEditor::paint (juce::Graphics& g)
+{
+    const auto r = getLocalBounds().toFloat();
+    g.setColour (juce::Colour (0xff0b1a14));
+    g.fillRect (r);
+
+    const auto& info = kMacroLanes[lane];
+    const auto& m = shown[(size_t) lane];
+    const auto colour = kLaneColours[lane];
+    const auto grid = gridArea();
+    const float colW = grid.getWidth() / kMacroSteps;
+    const float range = (float) (info.maxValue - info.minValue);
+    auto yFor = [&] (float value) { return grid.getBottom() - (value - (float) info.minValue) / range * grid.getHeight(); };
+
+    // grid + zero line
+    g.setColour (pal::green.withAlpha (0.1f));
+    for (int c = 0; c <= kMacroSteps; c += 4)
+        g.fillRect (grid.getX() + c * colW, grid.getY(), 1.0f, grid.getHeight());
+    const float baseValue = info.minValue < 0 ? 0.0f : (float) info.minValue;
+    g.setColour (pal::green.withAlpha (0.35f));
+    g.fillRect (grid.getX(), yFor (baseValue), grid.getWidth(), 1.0f);
+
+    // steps: bright inside the length, dim after it
+    for (int i = 0; i < kMacroSteps; ++i)
+    {
+        const bool inside = m.isOn() && i < m.length;
+        const float value = (float) m.values[(size_t) i];
+        const float x = grid.getX() + i * colW;
+        const float yTop = juce::jmin (yFor (value), yFor (baseValue)), yBottom = juce::jmax (yFor (value), yFor (baseValue));
+        g.setColour (colour.withAlpha (inside ? 0.35f : 0.08f));
+        g.fillRect (x + 1.0f, yTop, colW - 2.0f, juce::jmax (1.0f, yBottom - yTop));
+        g.setColour (colour.withAlpha (inside ? 1.0f : 0.25f));
+        g.fillRect (x + 1.0f, yFor (value) - 1.5f, colW - 2.0f, 3.0f);
+    }
+
+    // loop strip
+    const auto loop = loopArea();
+    g.setColour (pal::dark);
+    g.fillRect (loop);
+    if (m.isOn() && m.loop >= 0)
+    {
+        g.setColour (colour.withAlpha (0.6f));
+        g.fillRect (loop.getX() + m.loop * colW, loop.getY(), (m.length - m.loop) * colW, loop.getHeight());
+    }
+    g.setColour (pal::light);
+    g.setFont (pixelFont (5.0f));
+    g.drawText (m.isOn() && m.loop >= 0 ? "LOOP" : "CLICK HERE TO LOOP", loop, juce::Justification::centred);
+
+    if (! m.isOn())
+    {
+        g.setColour (pal::light);
+        g.setFont (pixelFont (6.0f));
+        g.drawText (juce::String (info.name) + " IS OFF - DRAW OR PRESS ON", grid, juce::Justification::centred);
+    }
+}
+
+void MacroEditor::drawAt (juce::Point<float> pos, bool connectToLast)
+{
+    const auto& info = kMacroLanes[lane];
+    const auto grid = gridArea();
+    const int step = stepAt (pos.x);
+    const int value = juce::jlimit (info.minValue, info.maxValue,
+                                    juce::roundToInt ((float) info.minValue
+                                                      + (grid.getBottom() - pos.y) / grid.getHeight() * (float) (info.maxValue - info.minValue)));
+
+    if (connectToLast && lastStep >= 0 && lastStep != step)
+    {
+        const int dir = step > lastStep ? 1 : -1;
+        for (int s = lastStep + dir; s != step; s += dir)
+            proc.setMacroStep (lane, s, juce::roundToInt (juce::jmap ((float) (s - lastStep), 0.0f, (float) (step - lastStep),
+                                                                      (float) lastValue, (float) value)));
+    }
+    proc.setMacroStep (lane, step, value);
+
+    // Drawing past the end (or on a lane that's off) makes the lane long enough
+    auto m = proc.getMacro (lane);
+    if (m.length <= step)
+    {
+        m.length = step + 1;
+        proc.setMacro (lane, m);
+    }
+    lastStep = step;
+    lastValue = value;
+    edited = true;
+    refresh();
+}
+
+void MacroEditor::mouseDown (const juce::MouseEvent& e)
+{
+    edited = false;
+    if (loopArea().expanded (0.0f, 3.0f).contains (e.position))
+    {
+        auto m = proc.getMacro (lane);
+        const int step = stepAt (e.position.x);
+        if (m.isOn() && step < m.length)
+        {
+            m.loop = m.loop == step ? -1 : step;
+            proc.setMacro (lane, m);
+            proc.macrosEdited();
+            refresh();
+        }
+        return;
+    }
+    if (gridArea().expanded (2.0f).contains (e.position))
+        drawAt (e.position, false);
+}
+
+void MacroEditor::mouseDrag (const juce::MouseEvent& e)
+{
+    if (lastStep >= 0)
+        drawAt (e.position, true);
+}
+
+void MacroEditor::mouseUp (const juce::MouseEvent&)
+{
+    if (edited)
+        proc.macrosEdited();
+    edited = false;
+    lastStep = -1;
 }
 
 //==============================================================================
@@ -894,6 +1168,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
       waveSelector (*state.getParameter (ids::wave), kNumWaves, waveButtons (pal::yellow), false, 3),
       scope (p.scope),
       waveDrawer (p),
+      macroEditor (p),
       attack  (state, ids::attack,  "ATTACK",  pal::lime, "ATTACK: how quickly a note fades in. Low = instant 'blip', high = slow swell."),
       decay   (state, ids::decay,   "DECAY",   pal::lime, "DECAY: how fast the note falls from its loudest point down to the Sustain level."),
       sustain (state, ids::sustain, "SUSTAIN", pal::lime, "SUSTAIN: the volume a note holds while you keep the key down. 0% = every note is a short blip."),
@@ -999,6 +1274,24 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     addAndMakeVisible (waveInfo);
     addAndMakeVisible (scope);
     addChildComponent (waveDrawer);
+    addChildComponent (macroEditor);
+
+    // The SCREEN shows the live wave, your drawn wave, or the macro editor
+    scopeViewButton.setTooltip ("SCOPE: watch the shape of the sound you're playing.");
+    waveViewButton.setTooltip ("WAVE: draw your own wave (it's what the DRAW sound plays).");
+    macroViewButton.setTooltip ("MACROS: draw how each note changes over time - volume steps, fast arps, pitch bends, "
+                                "pulse width. Lights up when a macro is on.");
+    const std::pair<juce::TextButton*, ScreenView> views[] = { { &scopeViewButton, ScreenView::Scope },
+                                                               { &waveViewButton, ScreenView::Wave },
+                                                               { &macroViewButton, ScreenView::Macros } };
+    for (auto [button, view] : views)
+    {
+        button->setClickingTogglesState (false);
+        button->setColour (juce::TextButton::buttonOnColourId, pal::green);
+        button->onClick = [this, view = view] { setScreenView (view); };
+        addAndMakeVisible (button);
+    }
+    setScreenView (ScreenView::Scope);
     setupCombo (consoleBox, consoleLabel, "CHIP", consoleNames(),
                 "CHIP: make BitBuddy behave like a real console. NES: only 2 notes at once, 16 volume steps, NES tuning "
                 "(high notes a bit off), on/off triangle. GAME BOY: 2 notes, 16 volume steps, softer top. C64: 3 notes - "
@@ -1192,7 +1485,7 @@ void MainPanel::paint (juce::Graphics& g)
     g.drawText ("8-BIT CHIPTUNE SYNTH", 18, 44, 210, 12, juce::Justification::left);
 
     drawSection (g, s1, "1", "PICK A SOUND", pal::yellow);
-    drawSection (g, sScope, {}, lastWave == (int) Wave::Custom ? "SCREEN: DRAW YOUR WAVE!" : "SCREEN", pal::green);
+    drawSection (g, sScope, {}, "SCREEN", pal::green);
     drawSection (g, s2, "2", "SHAPE IT  (VOLUME ENVELOPE)", pal::lime);
     drawSection (g, s3, "3", "MAGIC CHORDS  (ARPEGGIATOR)", pal::cyan);
     drawSection (g, s4, "4", "ADD MOVEMENT", pal::orange);
@@ -1229,6 +1522,10 @@ void MainPanel::resized()
     waveInfo.setBounds (18, 180, 584, 48);
     scope.setBounds (630, 90, 350, 132);
     waveDrawer.setBounds (scope.getBounds());
+    macroEditor.setBounds (scope.getBounds());
+    scopeViewButton.setBounds (796, 67, 54, 18);
+    waveViewButton.setBounds (852, 67, 48, 18);
+    macroViewButton.setBounds (902, 67, 78, 18);
     consoleLabel.setBounds (426, 71, 36, 12);
     consoleBox.setBounds (462, 67, 112, 20);
 
@@ -1304,14 +1601,23 @@ void MainPanel::timerCallback()
         waveInfo.setText (kWaveInfo[wave], juce::dontSendNotification);
         keyboard.setDrumMode (wave == (int) Wave::Drums);
 
-        // DRAW turns the screen into a drawing board
-        const bool drawing = wave == (int) Wave::Custom;
-        scope.setVisible (! drawing);
-        waveDrawer.setVisible (drawing);
-        repaint (sScope);
+        // Picking DRAW opens the drawing board; leaving it goes back to the scope
+        if (wave == (int) Wave::Custom)
+            setScreenView (ScreenView::Wave);
+        else if (screenView == ScreenView::Wave)
+            setScreenView (ScreenView::Scope);
     }
     if (waveDrawer.isVisible())
         waveDrawer.refresh();
+    if (macroEditor.isVisible())
+        macroEditor.refresh();
+
+    if (const bool anyMacro = proc.anyMacroOn(); anyMacro != lastAnyMacro)
+    {
+        lastAnyMacro = anyMacro;
+        macroViewButton.setButtonText (anyMacro ? "MACROS ON" : "MACROS");
+        macroViewButton.setColour (juce::TextButton::buttonColourId, anyMacro ? pal::lime.withAlpha (0.45f) : pal::dark);
+    }
 
     const int arpMode = juce::jlimit (0, 2, juce::roundToInt (state.getRawParameterValue (ids::arpMode)->load()));
     if (arpMode != lastArpMode)
@@ -1330,6 +1636,19 @@ void MainPanel::timerCallback()
         focusKeyboard();
 
     updateKeysStatus();
+}
+
+void MainPanel::setScreenView (ScreenView view)
+{
+    screenView = view;
+    scope.setVisible (view == ScreenView::Scope);
+    waveDrawer.setVisible (view == ScreenView::Wave);
+    macroEditor.setVisible (view == ScreenView::Macros);
+    scopeViewButton.setToggleState (view == ScreenView::Scope, juce::dontSendNotification);
+    waveViewButton.setToggleState (view == ScreenView::Wave, juce::dontSendNotification);
+    macroViewButton.setToggleState (view == ScreenView::Macros, juce::dontSendNotification);
+    if (view == ScreenView::Macros)
+        macroEditor.refresh();
 }
 
 void MainPanel::updateScaleTip()

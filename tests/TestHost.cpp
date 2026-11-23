@@ -303,7 +303,7 @@ static int runTests (const String& path)
         automatable += prm->isAutomatable() ? 1 : 0;
     res.check (automatable >= 31 && automatable <= 33, "Automatable parameters in the DAW",
                String (automatable) + " (+" + String (plugin->getParameters().size() - automatable) + " hidden MIDI-CC slots)");
-    res.check (plugin->getNumPrograms() == 25, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
+    res.check (plugin->getNumPrograms() == 27, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
 
     // ---- 2. Every preset makes sound, stays finite, and goes silent --------
     std::cout << "\n  -- every preset: sound / no NaN / no clipping / no stuck notes --\n";
@@ -864,6 +864,79 @@ static int runTests (const String& path)
             out.copyFrom (0, pos, block, 0, 0, 512);
         }
         const double hz = pitchAt (out, 0.3, 8192, sr, 40.0);
+        // ---- MACROS ----
+        auto renderDirect = [&] (int note, double seconds)
+        {
+            proc.prepareToPlay (sr, 512);
+            AudioBuffer<float> result (2, (int) (seconds * sr)), blk (2, 512);
+            result.clear();
+            for (int pos = 0; pos + 512 <= result.getNumSamples(); pos += 512)
+            {
+                MidiBuffer midi;
+                if (pos == 0)
+                    midi.addEvent (MidiMessage::noteOn (1, note, 0.8f), 0);
+                blk.clear();
+                proc.processBlock (blk, midi);
+                result.copyFrom (0, pos, blk, 0, 0, 512);
+            }
+            return result;
+        };
+        auto macro = [] (const char* text) { bb::Macro m; BitBuddyProcessor::macroFromString (text, m); return m; };
+
+        // ARP: 6 steps (0.1 s) on the note, then 6 steps a fifth up, looping
+        proc.selectPreset (0);
+        set ("sustain", 1.0f);
+        proc.setMacro (bb::kMacroArp, macro ("12|0|0,0,0,0,0,0,7,7,7,7,7,7"));
+        const auto arpOut = renderDirect (57, 0.5);
+        const double n1 = 69.0 + 12.0 * std::log2 (pitchAt (arpOut, 0.03, 2048, sr, 80.0) / 440.0);
+        const double n2 = 69.0 + 12.0 * std::log2 (pitchAt (arpOut, 0.12, 2048, sr, 80.0) / 440.0);
+        const double n3 = 69.0 + 12.0 * std::log2 (pitchAt (arpOut, 0.23, 2048, sr, 80.0) / 440.0);
+        res.check (std::abs (n1 - 57) < 0.3 && std::abs (n2 - 64) < 0.3 && std::abs (n3 - 57) < 0.3,
+                   "MACRO ARP: 0 then +7 then loops (60 steps/s)", String (n1, 1) + " " + String (n2, 1) + " " + String (n3, 1));
+
+        // VOL: full for 6 steps, then 0 -> silent while the key is still held
+        proc.clearMacros();
+        proc.setMacro (bb::kMacroVolume, macro ("8|-1|15,15,15,15,15,15,0,0"));
+        const auto volOut = renderDirect (57, 0.6);
+        const float loud = peakOf (volOut, 0.02, 0.09, sr), quiet = peakOf (volOut, 0.4, 0.6, sr);
+        res.check (loud > 0.05f && quiet < 0.005f, "MACRO VOL: note cut to silence after 0.1 s (key still held)",
+                   String (Decibels::gainToDecibels (loud), 1) + " dB -> " + String (Decibels::gainToDecibels (quiet, -120.0f), 1) + " dB");
+
+        // DUTY: 12.5% vs 50% pulse -> share of time the wave is "up"
+        auto upShare = [&] (const char* duty)
+        {
+            proc.clearMacros();
+            proc.setMacro (bb::kMacroDuty, macro (duty));
+            const auto out = renderDirect (57, 0.4);
+            int up = 0, n = 0;
+            for (int i = (int) (0.1 * sr); i < (int) (0.35 * sr); ++i, ++n)
+                up += out.getSample (0, i) > 0.0f ? 1 : 0;
+            return (double) up / n;
+        };
+        const double narrow = upShare ("1|-1|0"), square = upShare ("1|-1|2");
+        res.check (narrow < 0.25 && square > 0.4 && square < 0.6, "MACRO DUTY: 12.5% vs 50% pulse width",
+                   "up " + String (roundToInt (narrow * 100.0)) + "% vs " + String (roundToInt (square * 100.0)) + "%");
+
+        // Saved with the project + presets; presets without macros switch them off
+        proc.clearMacros();
+        proc.setMacro (bb::kMacroArp, macro ("3|0|0,4,7"));
+        MemoryBlock macroProject;
+        proc.getStateInformation (macroProject);
+        proc.clearMacros();
+        proc.setStateInformation (macroProject.getData(), (int) macroProject.getSize());
+        const bool macroSaved = BitBuddyProcessor::macroToString (proc.getMacro (bb::kMacroArp)).startsWith ("3|0|0,4,7");
+        proc.selectPreset (0);
+        const bool clearedByPreset = ! proc.anyMacroOn();
+        int blip = -1;
+        for (int i = 0; i < proc.getNumPrograms(); ++i)
+            if (proc.getProgramName (i) == "Macro Chord Blip")
+                blip = i;
+        proc.selectPreset (blip);
+        const bool presetMacros = proc.getMacro (bb::kMacroArp).length == 3 && proc.getMacro (bb::kMacroVolume).length == 12;
+        res.check (macroSaved && clearedByPreset && presetMacros, "MACROS: saved with project, cleared by plain presets, loaded by macro presets",
+                   String (macroSaved ? "saved" : "LOST") + ", " + (clearedByPreset ? "cleared" : "STILL ON") + ", "
+                       + (presetMacros ? "preset ok" : "PRESET WRONG"));
+
         res.check (projectOk && presetOk && keptByPlainPreset && presetDrawingLoaded && std::abs (centsOff (hz, 440.0)) < 8.0,
                    "DRAW: drawing saved in project + preset, preset drawings load, plays in tune",
                    String (projectOk ? "project ok" : "PROJECT LOST") + ", " + (presetOk ? "preset ok" : "PRESET LOST") + ", "
@@ -1119,13 +1192,15 @@ static int runSnapshot (const File& outDir)
     proc.prepareToPlay (44100.0, 512);
 
     // key: 0 = C ... 11 = B;  scale: 0 = Scale Lock off, 4 = minor pentatonic
-    struct Shot { const char* preset; std::vector<int> notes; const char* file; bool help; int key = 0, scale = 0; };
+    struct Shot { const char* preset; std::vector<int> notes; const char* file; bool help; int key = 0, scale = 0;
+                  const char* click = nullptr; };   // a button to press before the picture
     const Shot shots[] = {
         { "Hero Lead",       { 69 },         "ui-hero-lead.png",   false },
         { "Major Chord Arp", { 60 },         "ui-chord-arp.png",   false },
         { "Smart Chords",    { 62 },         "ui-scale-lock.png",  false, 9, 4 },   // A minor pentatonic
         { "C64 Squelch Bass", { 40 },        "ui-filter.png",      false },
         { "Game Boy Wave",   { 69 },         "ui-draw-wave.png",   false },
+        { "Macro Stutter Lead", { 69 },      "ui-macros.png",      false, 0, 0, "MACROS" },
         { "Drum Kit",        { 36, 42 },     "ui-drum-kit.png",    false },
         { "Classic Square",  {},             "ui-help.png",        true  },
     };
@@ -1152,6 +1227,9 @@ static int runSnapshot (const File& outDir)
         editor->setVisible (true);
         if (shot.help)
             if (auto* b = findButton (*editor, "? HELP"))
+                b->triggerClick();
+        if (shot.click != nullptr)
+            if (auto* b = findButton (*editor, shot.click))
                 b->triggerClick();
 
         MessageManager::getInstance()->runDispatchLoopUntil (400);   // let timers update the UI

@@ -156,11 +156,46 @@ private:
     juce::Rectangle<float> gridArea() const;
     void drawAt (juce::Point<float>, bool connectToLast);
     void applyShape (int shape);
+    void useDrawWave();
 
     BitBuddyProcessor& proc;
     bb::CustomWave shown {};
     juce::OwnedArray<juce::TextButton> shapeButtons;
     int lastStep = -1, lastValue = 0;
+};
+
+//==============================================================================
+/** MACROS: draw how each note changes over time, 60 steps a second (like FamiTracker).
+    Four lanes: VOL, ARP, PITCH, DUTY. Each has ON, a length and an optional loop. */
+class MacroEditor : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit MacroEditor (BitBuddyProcessor&);
+    void refresh();
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+
+private:
+    juce::Rectangle<float> gridArea() const;
+    juce::Rectangle<float> loopArea() const;
+    int stepAt (float x) const;
+    void selectLane (int);
+    void drawAt (juce::Point<float>, bool connectToLast);
+    void setLength (int newLength);
+    void updateButtons();
+
+    BitBuddyProcessor& proc;
+    int lane = 0;
+    std::array<bb::Macro, bb::kNumMacroLanes> shown {};
+    std::array<int, bb::kNumMacroLanes> lengthWhenOff { 16, 16, 16, 16 };
+    juce::OwnedArray<juce::TextButton> laneButtons;
+    juce::TextButton onButton { "ON" }, minusButton { "-" }, plusButton { "+" }, clearButton { "CLR" };
+    juce::Label lengthLabel;
+    int lastStep = -1, lastValue = 0;
+    bool edited = false;
 };
 
 //==============================================================================
@@ -275,6 +310,12 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> consoleAtt;
     Scope scope;
     WaveDrawer waveDrawer;
+    MacroEditor macroEditor;
+    juce::TextButton scopeViewButton { "SCOPE" }, waveViewButton { "WAVE" }, macroViewButton { "MACROS" };
+    enum class ScreenView { Scope, Wave, Macros };
+    ScreenView screenView = ScreenView::Scope;
+    void setScreenView (ScreenView);
+    bool lastAnyMacro = false;
 
     // 2. shape it
     Knob attack, decay, sustain, release;

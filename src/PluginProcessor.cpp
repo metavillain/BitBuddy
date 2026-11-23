@@ -54,6 +54,7 @@ BitBuddyProcessor::BitBuddyProcessor()
     pConsole      = get (bb::ids::console);
 
     setCustomWave (bb::defaultCustomWave());
+    clearMacros();
 }
 
 //==============================================================================
@@ -94,6 +95,117 @@ juce::String BitBuddyProcessor::customWaveToString (const bb::CustomWave& w)
     for (auto v : w)
         s << juce::String::toHexString ((int) (v & 15)).toUpperCase();
     return s;
+}
+
+//==============================================================================
+bb::Macro BitBuddyProcessor::getMacro (int lane) const noexcept
+{
+    bb::Macro m;
+    if (! juce::isPositiveAndBelow (lane, bb::kNumMacroLanes))
+        return m;
+    const auto& s = macros[(size_t) lane];
+    m.length = s.length.load (std::memory_order_relaxed);
+    m.loop = s.loop.load (std::memory_order_relaxed);
+    for (int i = 0; i < bb::kMacroSteps; ++i)
+        m.values[(size_t) i] = s.values[(size_t) i].load (std::memory_order_relaxed);
+    return m;
+}
+
+void BitBuddyProcessor::setMacro (int lane, const bb::Macro& m) noexcept
+{
+    if (! juce::isPositiveAndBelow (lane, bb::kNumMacroLanes))
+        return;
+    auto& s = macros[(size_t) lane];
+    for (int i = 0; i < bb::kMacroSteps; ++i)
+        setMacroStep (lane, i, m.values[(size_t) i]);
+    const int length = juce::jlimit (0, bb::kMacroSteps, m.length);
+    s.loop.store (m.loop >= 0 && m.loop < length ? m.loop : -1, std::memory_order_relaxed);
+    s.length.store (length, std::memory_order_relaxed);
+}
+
+void BitBuddyProcessor::setMacroStep (int lane, int step, int value) noexcept
+{
+    if (juce::isPositiveAndBelow (lane, bb::kNumMacroLanes) && juce::isPositiveAndBelow (step, bb::kMacroSteps))
+    {
+        const auto& info = bb::kMacroLanes[lane];
+        macros[(size_t) lane].values[(size_t) step].store ((std::int8_t) juce::jlimit (info.minValue, info.maxValue, value),
+                                                           std::memory_order_relaxed);
+    }
+}
+
+void BitBuddyProcessor::clearMacros() noexcept
+{
+    for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
+    {
+        bb::Macro m;
+        m.values.fill ((std::int8_t) bb::kMacroLanes[lane].defaultValue);
+        setMacro (lane, m);
+    }
+}
+
+bool BitBuddyProcessor::anyMacroOn() const noexcept
+{
+    for (auto& s : macros)
+        if (s.length.load (std::memory_order_relaxed) > 0)
+            return true;
+    return false;
+}
+
+void BitBuddyProcessor::macrosEdited()
+{
+    markRemixed();
+    updateHostDisplay (juce::AudioProcessor::ChangeDetails().withNonParameterStateChanged (true));
+}
+
+juce::String BitBuddyProcessor::macroToString (const bb::Macro& m)
+{
+    juce::StringArray values;
+    for (auto v : m.values)
+        values.add (juce::String ((int) v));
+    return juce::String (m.length) + "|" + juce::String (m.loop) + "|" + values.joinIntoString (",");
+}
+
+bool BitBuddyProcessor::macroFromString (const juce::String& s, bb::Macro& m)
+{
+    const auto parts = juce::StringArray::fromTokens (s, "|", {});
+    if (parts.size() != 3)
+        return false;
+    const auto values = juce::StringArray::fromTokens (parts[2], ",", {});
+    if (values.isEmpty() || values.size() > bb::kMacroSteps)
+        return false;
+
+    m = {};
+    m.length = juce::jlimit (0, bb::kMacroSteps, parts[0].getIntValue());
+    m.loop = parts[1].getIntValue();
+    for (int i = 0; i < values.size(); ++i)
+        m.values[(size_t) i] = (std::int8_t) juce::jlimit (-128, 127, values[i].getIntValue());
+    for (int i = values.size(); i < bb::kMacroSteps; ++i)
+        m.values[(size_t) i] = m.values[(size_t) values.size() - 1];   // short lists: repeat the last value
+    return true;
+}
+
+void BitBuddyProcessor::saveMacrosTo (juce::ValueTree& tree) const
+{
+    for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
+        tree.setProperty ("macro" + juce::String (lane), macroToString (getMacro (lane)), nullptr);
+}
+
+void BitBuddyProcessor::saveMacrosTo (juce::XmlElement& xml) const
+{
+    for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
+        xml.setAttribute ("macro" + juce::String (lane), macroToString (getMacro (lane)));
+}
+
+// Missing lanes (older projects / presets) are switched off
+void BitBuddyProcessor::loadMacrosFrom (const std::function<juce::String (const juce::String&)>& getProperty)
+{
+    clearMacros();
+    for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
+    {
+        bb::Macro m;
+        if (macroFromString (getProperty ("macro" + juce::String (lane)), m))
+            setMacro (lane, m);
+    }
 }
 
 bool BitBuddyProcessor::customWaveFromString (const juce::String& s, bb::CustomWave& w)
@@ -151,6 +263,8 @@ void BitBuddyProcessor::updateEngineParams()
     ep.wave       = (bb::Wave) idx (pWave, bb::kNumWaves - 1);
     for (int i = 0; i < bb::kCustomWaveSteps; ++i)
         ep.customWave[(size_t) i] = customWave[(size_t) i].load (std::memory_order_relaxed);
+    for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
+        ep.macros[(size_t) lane] = getMacro (lane);
     ep.attack     = pAttack->load();
     ep.decay      = pDecay->load();
     ep.sustain    = juce::jlimit (0.0f, 1.0f, pSustain->load());
@@ -364,10 +478,18 @@ void BitBuddyProcessor::loadProgram (int index)
     bb::applyPreset (apvts, index);
 
     // Presets that use DRAW bring their own drawing; others leave yours alone
+    const auto& preset = bb::factoryPresets()[(size_t) index];
     bb::CustomWave w {};
-    if (const auto* drawing = bb::factoryPresets()[(size_t) index].customWave)
-        if (customWaveFromString (drawing, w))
-            setCustomWave (w);
+    if (preset.customWave != nullptr && customWaveFromString (preset.customWave, w))
+        setCustomWave (w);
+
+    // Macros are part of a sound: a preset without them switches them off
+    loadMacrosFrom ([&preset] (const juce::String& key)
+    {
+        const int lane = key.getTrailingIntValue();
+        return juce::isPositiveAndBelow (lane, bb::kNumMacroLanes) && preset.macros[(size_t) lane] != nullptr
+                   ? juce::String (preset.macros[(size_t) lane]) : juce::String();
+    });
 }
 
 const juce::String BitBuddyProcessor::getProgramName (int index)
@@ -491,6 +613,7 @@ void BitBuddyProcessor::randomize()
     for (auto s : { Section::Sound, Section::Shape, Section::Chords, Section::Movement, Section::Crunch, Section::Filter })
         rollSection (s, rng);
 
+    clearMacros();   // a fresh sound starts without macros
     customName = "Surprise #" + juce::String (++randomCount);
     userPresetLoaded = false;
 }
@@ -569,6 +692,7 @@ bool BitBuddyProcessor::saveUserPreset (const juce::String& rawName)
     juce::XmlElement xml ("BitBuddyPreset");
     xml.setAttribute ("name", name);
     xml.setAttribute ("customWave", customWaveToString (getCustomWave()));
+    saveMacrosTo (xml);
    #ifdef JucePlugin_VersionString
     xml.setAttribute ("version", JucePlugin_VersionString);
    #endif
@@ -616,6 +740,7 @@ bool BitBuddyProcessor::loadUserPreset (const juce::String& name)
     bb::CustomWave w {};
     if (customWaveFromString (xml->getStringAttribute ("customWave"), w))
         setCustomWave (w);
+    loadMacrosFrom ([&xml] (const juce::String& key) { return xml->getStringAttribute (key); });
 
     customName = name;
     userPresetLoaded = true;
@@ -637,6 +762,7 @@ void BitBuddyProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("customName", customName, nullptr);
     state.setProperty ("userPreset", userPresetLoaded, nullptr);
     state.setProperty ("customWave", customWaveToString (getCustomWave()), nullptr);
+    saveMacrosTo (state);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -654,6 +780,7 @@ void BitBuddyProcessor::setStateInformation (const void* data, int sizeInBytes)
             userPresetLoaded = (bool) tree.getProperty ("userPreset", false);
             bb::CustomWave w {};
             setCustomWave (customWaveFromString (tree.getProperty ("customWave", "").toString(), w) ? w : bb::defaultCustomWave());
+            loadMacrosFrom ([&tree] (const juce::String& key) { return tree.getProperty (juce::Identifier (key), "").toString(); });
             apvts.replaceState (tree);
         }
     }

@@ -153,6 +153,16 @@ void ChipEngine::setParams (const EngineParams& np)
     glideOn     = p.glide >= 0.001f;
     glideCoeff  = glideOn ? (float) (1.0 - std::exp (-(double) kControlInterval / (p.glide * 0.25 * sr))) : 1.0f;
     arpStepSamples = std::max (16.0, p.arpStepSeconds * sr);
+    macroStepSamples = sr / kMacroStepsPerSecond;
+
+    anyMacroOn = false;
+    for (auto& m : p.macros)
+    {
+        m.length = std::clamp (m.length, 0, kMacroSteps);
+        if (m.loop >= m.length)
+            m.loop = -1;
+        anyMacroOn = anyMacroOn || m.isOn();
+    }
 
     if (p.arpOctaves != builtChordOctaves)
         rebuildChordSequences();
@@ -455,13 +465,14 @@ double ChipEngine::noiseClock (double wanted) const noexcept
 // volume), 256 on the C64. The NES triangle has no volume at all: on or off.
 float ChipEngine::chipLevel (Voice& v) noexcept
 {
-    const float level = v.env * v.velocity;
+    const float level = v.env * v.velocity * (anyMacroOn ? v.macroVolume : 1.0f);
     switch (p.console)
     {
         case Console::NES:
             if (p.wave == Wave::Triangle)
             {
-                const float target = (v.stage == Stage::Release || v.stage == Stage::Idle) ? 0.0f : 1.0f;
+                const bool silenced = anyMacroOn && v.macroVolume <= 0.0f;   // volume 0 is the only "volume" it has
+                const float target = (silenced || v.stage == Stage::Release || v.stage == Stage::Idle) ? 0.0f : 1.0f;
                 v.gate += (target - v.gate) * 0.02f;   // ~1 ms: on / off without a click
                 return v.gate;
             }
@@ -686,6 +697,7 @@ void ChipEngine::startVoice (Voice& v, int note, float velocity)
 
     v.choking = false;
     v.chokeGain = 1.0f;
+    restartMacros (v);
     lastNote = note;
 }
 
@@ -700,7 +712,25 @@ void ChipEngine::retrigger (Voice& v, int note)
     v.lfoPhase = 0.25;
     v.stage = Stage::Attack;   // restart from the current level -> no click
     v.held = true;
+    restartMacros (v);
     lastNote = note;
+}
+
+// Macros start from step 0 on every new note (like FamiTracker)
+void ChipEngine::restartMacros (Voice& v) noexcept
+{
+    v.macroFrame = 0;
+    v.macroCounter = 0.0;
+    applyMacroFrame (v);
+}
+
+void ChipEngine::applyMacroFrame (Voice& v) noexcept
+{
+    const auto& m = p.macros;
+    v.macroVolume = m[kMacroVolume].isOn() ? (float) std::clamp (m[kMacroVolume].valueAt (v.macroFrame), 0, 15) / 15.0f : 1.0f;
+    v.macroNotes  = (m[kMacroArp].isOn()   ? (float) m[kMacroArp].valueAt (v.macroFrame) : 0.0f)
+                  + (m[kMacroPitch].isOn() ? (float) m[kMacroPitch].valueAt (v.macroFrame) * 0.125f : 0.0f);
+    v.macroDuty   = m[kMacroDuty].isOn() ? std::clamp (m[kMacroDuty].valueAt (v.macroFrame), 0, 3) : -1;
 }
 
 void ChipEngine::startDrum (Voice& v, int note, float velocity)
@@ -839,6 +869,20 @@ float ChipEngine::renderTone (Voice& v) noexcept
 
     float note = v.ctrlNote;
 
+    // Instrument macros: step on 60 times a second
+    if (anyMacroOn)
+    {
+        v.macroCounter += 1.0;
+        if (v.macroCounter >= macroStepSamples)
+        {
+            v.macroCounter -= macroStepSamples;
+            if (v.macroFrame < 100000)
+                ++v.macroFrame;
+            applyMacroFrame (v);
+        }
+        note += v.macroNotes;
+    }
+
     // Chord arpeggio: flip through the chord notes, without restarting the note
     if (p.arpMode == ArpMode::Chord)
     {
@@ -912,7 +956,9 @@ float ChipEngine::oscillate (Voice& v) noexcept
         case Wave::Pulse25:
         case Wave::Pulse12:
         {
-            float duty = p.wave == Wave::Square ? 0.5f : (p.wave == Wave::Pulse25 ? 0.25f : 0.125f);
+            static constexpr float macroDuties[4] = { 0.125f, 0.25f, 0.5f, 0.75f };
+            float duty = v.macroDuty >= 0 ? macroDuties[v.macroDuty]
+                                          : (p.wave == Wave::Square ? 0.5f : (p.wave == Wave::Pulse25 ? 0.25f : 0.125f));
 
             if (p.pwm > 0.0f)
             {
