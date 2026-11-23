@@ -8,6 +8,7 @@
 
 #include "ChipEngine.h"
 #include "Effects.h"
+#include "Recorder.h"
 
 // Lock-free ring buffer so the UI "screen" can show the live waveform.
 class ScopeBuffer
@@ -131,6 +132,11 @@ public:
     static juce::String macroToString (const bb::Macro&);
     static bool macroFromString (const juce::String&, bb::Macro&);
 
+    //==========================================================================
+    /** RECORD (BitBuddy app): WAV of everything you hear + MIDI of the notes you play. */
+    bb::Recorder recorder;
+    bool isStandaloneApp() const noexcept { return wrapperType == wrapperType_Standalone; }
+
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;   // on-screen keyboard -> synth
     ScopeBuffer scope;
@@ -138,6 +144,7 @@ public:
 private:
     void updateEngineParams();
     void handleMidi (const juce::MidiMessage&);
+    void writeRecording (const juce::AudioBuffer<float>&, int numSamples) noexcept;
     void loadProgram (int index);
 
     bb::ChipEngine engine;

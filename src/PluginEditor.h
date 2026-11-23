@@ -345,6 +345,14 @@ private:
     juce::Label keyLabel, scaleLabel, scaleTip;
     void updateScaleTip();
 
+    // play along: RECORD (BitBuddy app only)
+    juce::TextButton recordButton { "REC" }, showRecordingButton { "SHOW" };
+    juce::Label recordStatus, appOnlyNote;
+    juce::ScopedMessageBox shareBox;
+    void toggleRecording();
+    void updateRecordStatus();
+    bool wasRecording = false;
+
     juce::Label hintLabel;
     juce::Label keysStatus;
     juce::String lastKeysStatus;

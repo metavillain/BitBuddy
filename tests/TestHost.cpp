@@ -937,6 +937,65 @@ static int runTests (const String& path)
                    String (macroSaved ? "saved" : "LOST") + ", " + (clearedByPreset ? "cleared" : "STILL ON") + ", "
                        + (presetMacros ? "preset ok" : "PRESET WRONG"));
 
+        // ---- RECORD: WAV + MIDI files ----
+        {
+            bb::Recorder rec;
+            const bool started = rec.start (sr);
+            AudioBuffer<float> tone (2, 512);
+            for (int blockIndex = 0; blockIndex < (int) (sr / 512); ++blockIndex)
+            {
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float s = 0.5f * std::sin (6.2831853f * 440.0f * (float) (blockIndex * 512 + i) / (float) sr);
+                    tone.setSample (0, i, s);
+                    tone.setSample (1, i, s);
+                }
+                if (blockIndex == 10)
+                    rec.addMidi (MidiMessage::noteOn (1, 69, 0.8f), 100);
+                if (blockIndex == 60)
+                    rec.addMidi (MidiMessage::noteOff (1, 69), 0);
+                rec.writeAudio (tone.getArrayOfReadPointers(), 512);
+            }
+            rec.stop();
+
+            AudioFormatManager formats;
+            formats.registerBasicFormats();
+            std::unique_ptr<AudioFormatReader> reader (formats.createReaderFor (rec.getWavFile()));
+            const auto seconds = reader != nullptr ? (double) reader->lengthInSamples / reader->sampleRate : 0.0;
+            float wavPeak = 0.0f;
+            if (reader != nullptr)
+            {
+                Range<float> range[2];
+                reader->readMaxLevels (0, reader->lengthInSamples, range, 2);
+                wavPeak = range[0].getEnd();
+            }
+            reader.reset();
+
+            MidiFile midiFile;
+            FileInputStream midiIn (rec.getMidiFile());
+            const bool midiRead = midiIn.openedOk() && midiFile.readFrom (midiIn);
+            int noteOns = 0;
+            double noteTime = -1.0;
+            if (midiRead && midiFile.getNumTracks() > 0)
+            {
+                midiFile.convertTimestampTicksToSeconds();
+                for (auto* e : *midiFile.getTrack (0))
+                    if (e->message.isNoteOn())
+                    {
+                        ++noteOns;
+                        noteTime = e->message.getTimeStamp();
+                    }
+            }
+            const double expectedNoteTime = (10 * 512 + 100) / sr;
+            res.check (started && std::abs (seconds - 512.0 * (int) (sr / 512) / sr) < 0.001 && std::abs (wavPeak - 0.5f) < 0.01f
+                           && noteOns == 1 && std::abs (noteTime - expectedNoteTime) < 0.002,
+                       "RECORD: WAV (length, level) + MIDI (note at the right time)",
+                       String (seconds, 3) + " s, peak " + String (wavPeak, 3) + ", " + String (noteOns) + " note at "
+                           + String (noteTime, 4) + " s (expected " + String (expectedNoteTime, 4) + ")");
+            rec.getWavFile().deleteFile();
+            rec.getMidiFile().deleteFile();
+        }
+
         res.check (projectOk && presetOk && keptByPlainPreset && presetDrawingLoaded && std::abs (centsOff (hz, 440.0)) < 8.0,
                    "DRAW: drawing saved in project + preset, preset drawings load, plays in tune",
                    String (projectOk ? "project ok" : "PROJECT LOST") + ", " + (presetOk ? "preset ok" : "PRESET LOST") + ", "

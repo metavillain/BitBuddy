@@ -31,6 +31,9 @@
       <FILE id="BbF011" name="PluginEditor.h" compile="0" resource="0" file="../src/PluginEditor.h"/>
       <FILE id="BbF012" name="RetroLookAndFeel.cpp" compile="1" resource="0" file="../src/RetroLookAndFeel.cpp"/>
       <FILE id="BbF013" name="RetroLookAndFeel.h" compile="0" resource="0" file="../src/RetroLookAndFeel.h"/>
+      <FILE id="BbF014" name="Recorder.cpp" compile="1" resource="0" file="../src/Recorder.cpp"/>
+      <FILE id="BbF015" name="Recorder.h" compile="0" resource="0" file="../src/Recorder.h"/>
+      <FILE id="BbF016" name="Scales.h" compile="0" resource="0" file="../src/Scales.h"/>
     </GROUP>
     <GROUP id="BbG003" name="assets">
       <FILE id="BbFont" name="PressStart2P-Regular.ttf" compile="0" resource="1" file="../assets/PressStart2P-Regular.ttf"/>
@@ -58,6 +61,7 @@
     <ANDROIDSTUDIO targetFolder="Builds/Android" androidMinimumSDK="24" androidTargetSDK="35"
                    androidScreenOrientation="landscape" androidVersionCode="101" bigIcon="BbIcon"
                    microphonePermissionNeeded="0" androidInternetNeeded="0" androidExternalWriteNeeded="0"
+                   androidEnableContentSharing="1"
                    androidReadMediaAudioPermission="0" androidReadMediaImagesPermission="0"
                    androidReadMediaVideoPermission="0" androidPushNotifications="0">
       <CONFIGURATIONS>

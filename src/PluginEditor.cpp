@@ -1358,6 +1358,47 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     scaleTip.setMinimumHorizontalScale (0.85f);
     addAndMakeVisible (scaleTip);
 
+    // --- play along: RECORD (in the BitBuddy app; in a DAW you record with the DAW) ---
+    recordButton.setTooltip ("REC: records everything you hear to a WAV file (send it to a friend!) and the notes you "
+                             "play to a MIDI file. Press again to stop.");
+    recordButton.setColour (juce::TextButton::buttonColourId, pal::red);
+    recordButton.onClick = [this] { toggleRecording(); };
+   #if JUCE_CONTENT_SHARING && (JUCE_IOS || JUCE_ANDROID)
+    showRecordingButton.setButtonText ("SHARE");
+    showRecordingButton.setTooltip ("SHARE: send your last recording (WAV + MIDI) to another app or a friend.");
+   #else
+    showRecordingButton.setTooltip ("SHOW: opens the folder with your recordings (Music / BitBuddy Recordings).");
+   #endif
+    showRecordingButton.setColour (juce::TextButton::buttonColourId, pal::teal);
+    showRecordingButton.onClick = [this]
+    {
+        const auto wav = proc.recorder.getWavFile();
+       #if JUCE_CONTENT_SHARING && (JUCE_IOS || JUCE_ANDROID)
+        shareBox = juce::ContentSharer::shareFilesScoped ({ juce::URL (wav), juce::URL (proc.recorder.getMidiFile()) },
+                                                          [] (bool, const juce::String&) {}, this);
+       #else
+        wav.revealToUser();
+       #endif
+    };
+    recordStatus.setFont (pixelFont (7.0f));
+    recordStatus.setJustificationType (juce::Justification::centred);
+    recordStatus.setColour (juce::Label::textColourId, pal::light);
+    appOnlyNote.setFont (textFont (13.0f, true));
+    appOnlyNote.setColour (juce::Label::textColourId, pal::light);
+    appOnlyNote.setText ("JAM + RECORD live in the BitBuddy app. In your DAW, record with the DAW itself!",
+                         juce::dontSendNotification);
+
+    if (proc.isStandaloneApp())
+    {
+        addAndMakeVisible (recordButton);
+        addAndMakeVisible (recordStatus);
+        addChildComponent (showRecordingButton);
+    }
+    else
+    {
+        addAndMakeVisible (appOnlyNote);
+    }
+
     // --- bottom ---
     hintLabel.setFont (textFont (15.0f));
     hintLabel.setColour (juce::Label::textColourId, pal::white);
@@ -1580,6 +1621,10 @@ void MainPanel::resized()
     scaleLabel.setBounds (590, 578, 140, 12);
     scaleBox.setBounds (590, 592, 140, 26);
     scaleTip.setBounds (740, 576, 244, 46);
+    recordButton.setBounds (780, 628, 64, 26);
+    recordStatus.setBounds (846, 628, 74, 26);
+    showRecordingButton.setBounds (922, 628, 60, 26);
+    appOnlyNote.setBounds (510, 626, 472, 30);
 
     hintArea = { 10, 668, 980, 28 };
     hintLabel.setBounds (hintArea.reduced (2).withTrimmedLeft (26).withTrimmedRight (176));
@@ -1628,6 +1673,8 @@ void MainPanel::timerCallback()
 
     syncPresetBox();
     updateScaleTip();
+    if (proc.isStandaloneApp())
+        updateRecordStatus();
 
     // Whenever BitBuddy's own window is the active one (and no menu is open),
     // keep the letter keys on the piano. This also recovers focus after a menu
@@ -1636,6 +1683,42 @@ void MainPanel::timerCallback()
         focusKeyboard();
 
     updateKeysStatus();
+}
+
+void MainPanel::toggleRecording()
+{
+    if (proc.recorder.isRecording())
+        proc.recorder.stop();
+    else if (! proc.recorder.start (proc.getSampleRate()))
+        juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                          .withTitle ("COULDN'T RECORD")
+                                          .withMessage ("BitBuddy couldn't create a file in " + Recorder::getRecordingsFolder().getFullPathName())
+                                          .withButton ("OK")
+                                          .withAssociatedComponent (this),
+                                      nullptr);
+    updateRecordStatus();
+}
+
+void MainPanel::updateRecordStatus()
+{
+    const bool recording = proc.recorder.isRecording();
+    if (recording)
+    {
+        const int seconds = (int) proc.recorder.getSecondsRecorded();
+        recordButton.setButtonText ("STOP");
+        recordStatus.setText (juce::String::formatted ("REC %d:%02d", seconds / 60, seconds % 60), juce::dontSendNotification);
+        recordStatus.setColour (juce::Label::textColourId, (juce::Time::getMillisecondCounter() / 500) % 2 == 0 ? pal::red.brighter (0.5f)
+                                                                                                                 : pal::white);
+        showRecordingButton.setVisible (false);
+    }
+    else if (wasRecording)
+    {
+        recordButton.setButtonText ("REC");
+        recordStatus.setText ("SAVED!", juce::dontSendNotification);
+        recordStatus.setColour (juce::Label::textColourId, pal::lime);
+        showRecordingButton.setVisible (true);
+    }
+    wasRecording = recording;
 }
 
 void MainPanel::setScreenView (ScreenView view)

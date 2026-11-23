@@ -359,6 +359,7 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         const auto msg = meta.getMessage();
         if (msg.isNoteOn() && numFilterTriggers < (int) filterTriggers.size())
             filterTriggers[(size_t) numFilterTriggers++] = eventPos;   // the filter envelope opens right here
+        recorder.addMidi (msg, eventPos);
         handleMidi (msg);
     }
     if (pos < numSamples)
@@ -372,6 +373,7 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     {
         outputGain.skip (numSamples);
         scope.pushSilence (numSamples);
+        writeRecording (buffer, numSamples);   // keep the recording's timeline running
         return;
     }
     effectsIdle = false;
@@ -450,6 +452,17 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     for (int ch = 2; ch < numChannels; ++ch)
         buffer.clear (ch, 0, numSamples);
+
+    writeRecording (buffer, numSamples);
+}
+
+void BitBuddyProcessor::writeRecording (const juce::AudioBuffer<float>& buffer, int numSamples) noexcept
+{
+    if (! recorder.isRecording())
+        return;
+    const float* left = buffer.getReadPointer (0);
+    const float* channels[2] = { left, buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : left };
+    recorder.writeAudio (channels, numSamples);
 }
 
 //==============================================================================
