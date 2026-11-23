@@ -31,6 +31,10 @@ const char* const kArpTips[3] = {
 
 const char* const kDefaultHint = "Hover over anything to learn what it does.   Double-click a knob to reset it.";
 
+// Preset menu item ids: factory presets are 1..N
+constexpr int kUserPresetIdBase = 1001;   // MY PRESETS
+constexpr int kDeletePresetId   = 5000;   // "Delete <this preset>..."
+
 // A tiny drawing of each waveform, for the wave buttons. x runs 0..2 (two cycles).
 float iconSample (int wave, float x)
 {
@@ -169,6 +173,29 @@ static ParamButtons::Factory textButtons (const juce::StringArray& labels, const
         b->setTooltip (hints[i]);
         return b;
     };
+}
+
+//==============================================================================
+DiceButton::DiceButton (juce::Colour c) : juce::Button ("DICE"), accent (c)
+{
+    setTooltip ("DICE: rolls random (but musical) settings for just this section. Keep rolling until you love it!");
+}
+
+void DiceButton::paintButton (juce::Graphics& g, bool over, bool down)
+{
+    auto r = getLocalBounds().toFloat().reduced (1.0f).translated (0.0f, down ? 1.0f : 0.0f);
+    g.setColour (over ? accent : pal::white);
+    g.fillRect (r);
+    g.setColour (pal::bg);
+    g.drawRect (r, 1.0f);
+
+    // five pips, pixel style
+    const float s = juce::jmax (2.0f, std::floor (r.getWidth() / 6.0f));
+    auto pip = [&] (float fx, float fy)
+    {
+        g.fillRect (std::round (r.getX() + r.getWidth() * fx - s * 0.5f), std::round (r.getY() + r.getHeight() * fy - s * 0.5f), s, s);
+    };
+    pip (0.28f, 0.28f); pip (0.72f, 0.28f); pip (0.5f, 0.5f); pip (0.28f, 0.72f); pip (0.72f, 0.72f);
 }
 
 //==============================================================================
@@ -569,6 +596,7 @@ void HelpOverlay::paint (juce::Graphics& g)
 MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     : proc (p),
       state (p.apvts),
+      diceSound (pal::yellow), diceShape (pal::lime), diceChords (pal::cyan), diceMovement (pal::orange), diceCrunch (pal::sky),
       waveSelector (*state.getParameter (ids::wave), 8, waveButtons (pal::yellow), false, 3),
       scope (p.scope),
       attack  (state, ids::attack,  "ATTACK",  pal::lime, "ATTACK: how quickly a note fades in. Low = instant 'blip', high = slow swell."),
@@ -621,23 +649,51 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     surpriseButton.setColour (juce::TextButton::buttonColourId, pal::purple);
     surpriseButton.onClick = [this] { proc.randomize(); };
 
-    for (int i = 0; i < proc.getNumPrograms(); ++i)
-        presetBox.addItem (proc.getProgramName (i), i + 1);
-    presetBox.setTooltip ("PRESETS: ready-made sounds to start from. Pick one, play some notes, then tweak the knobs!");
+    mutateButton.setTooltip ("MUTATE: nudges every knob a little - a cousin of the sound you have now. "
+                             "Press it a few times to let your sound evolve!");
+    mutateButton.setColour (juce::TextButton::buttonColourId, pal::blue);
+    mutateButton.onClick = [this] { proc.mutate(); };
+
+    saveButton.setTooltip ("SAVE: keep the sound you made as one of your own presets (under MY PRESETS in the preset menu).");
+    saveButton.setColour (juce::TextButton::buttonColourId, pal::green);
+    saveButton.onClick = [this] { askToSavePreset(); };
+
+    presetBox.setTooltip ("PRESETS: ready-made sounds to start from - and your own under MY PRESETS. "
+                          "Pick one, play some notes, then tweak the knobs!");
     presetBox.setColour (juce::ComboBox::outlineColourId, pal::yellow);
     presetBox.onChange = [this]
     {
         const int id = presetBox.getSelectedId();
-        if (id > 0)
+        if (id == kDeletePresetId)
+            askToDeletePreset();
+        else if (id >= kUserPresetIdBase)
+        {
+            if (juce::isPositiveAndBelow (id - kUserPresetIdBase, userPresets.size()))
+                proc.loadUserPreset (userPresets[id - kUserPresetIdBase]);
+        }
+        else if (id > 0)
             proc.selectPreset (id - 1);
     };
+    refreshPresetBox();
 
     presetTip.setFont (textFont (14.0f));
     presetTip.setColour (juce::Label::textColourId, pal::light);
 
     for (auto* c : { (juce::Component*) &helpButton, (juce::Component*) &prevButton, (juce::Component*) &nextButton,
+                     (juce::Component*) &saveButton, (juce::Component*) &mutateButton,
                      (juce::Component*) &surpriseButton, (juce::Component*) &presetBox, (juce::Component*) &presetTip })
         addAndMakeVisible (c);
+
+    // --- dice: one per section ---
+    using Section = BitBuddyProcessor::Section;
+    const std::pair<DiceButton*, Section> dice[] = { { &diceSound, Section::Sound }, { &diceShape, Section::Shape },
+                                                      { &diceChords, Section::Chords }, { &diceMovement, Section::Movement },
+                                                      { &diceCrunch, Section::Crunch } };
+    for (auto [button, section] : dice)
+    {
+        button->onClick = [this, section = section] { proc.rollSection (section); };
+        addAndMakeVisible (button);
+    }
 
     // --- 1. pick a sound ---
     addAndMakeVisible (waveSelector);
@@ -845,7 +901,6 @@ void MainPanel::paint (juce::Graphics& g)
     g.setColour (pal::light);
     g.setFont (pixelFont (8.0f));
     g.drawText ("8-BIT CHIPTUNE SYNTH", 18, 44, 210, 12, juce::Justification::left);
-    g.drawText ("PRESET", 440, 12, 74, 28, juce::Justification::centredRight);
 
     drawSection (g, s1, "1", "PICK A SOUND", pal::yellow);
     drawSection (g, sScope, {}, "SCREEN", pal::green);
@@ -871,11 +926,13 @@ void MainPanel::paint (juce::Graphics& g)
 void MainPanel::resized()
 {
     helpButton.setBounds (240, 12, 92, 30);
-    prevButton.setBounds (520, 12, 32, 30);
-    presetBox.setBounds (556, 12, 254, 28);
-    nextButton.setBounds (814, 12, 32, 30);
-    surpriseButton.setBounds (852, 12, 138, 30);
-    presetTip.setBounds (518, 42, 472, 18);
+    prevButton.setBounds (430, 12, 30, 30);
+    presetBox.setBounds (464, 12, 206, 28);
+    nextButton.setBounds (674, 12, 30, 30);
+    saveButton.setBounds (710, 12, 62, 30);
+    mutateButton.setBounds (778, 12, 80, 30);
+    surpriseButton.setBounds (864, 12, 126, 30);
+    presetTip.setBounds (430, 42, 560, 18);
 
     s1 = { 10, 64, 600, 168 };
     sScope = { 620, 64, 370, 168 };
@@ -920,6 +977,12 @@ void MainPanel::resized()
     echoTimeBox.setBounds (778, 442, 76, 26);
     echoFeedback.setBounds (858, 418, 62, 118);
     volume.setBounds (922, 418, 62, 118);
+
+    // dice in each numbered section's top-right corner
+    const std::pair<DiceButton*, juce::Rectangle<int>> dice[] = { { &diceSound, s1 }, { &diceShape, s2 }, { &diceChords, s3 },
+                                                                   { &diceMovement, s4 }, { &diceCrunch, s5 } };
+    for (auto [button, section] : dice)
+        button->setBounds (section.getRight() - 26, section.getY() + 5, 18, 18);
 
     sPlay = { 500, 550, 490, 112 };
     keyLabel.setBounds (510, 578, 70, 12);
@@ -994,18 +1057,116 @@ void MainPanel::updateScaleTip()
 void MainPanel::syncPresetBox()
 {
     const auto name = proc.getDisplayPresetName();
-    if (name == lastPresetName)
+    const bool isUser = proc.isUserPresetLoaded();
+    if (name == lastPresetName && isUser == lastWasUserPreset)
         return;
 
     lastPresetName = name;
-    const int current = proc.getCurrentProgram();
+    lastWasUserPreset = isUser;
+    refreshPresetBox();   // the "Delete..." item comes and goes with your own presets
 
-    if (name == proc.getProgramName (current))
+    const int current = proc.getCurrentProgram();
+    if (isUser && userPresets.contains (name))
+        presetBox.setSelectedId (kUserPresetIdBase + userPresets.indexOf (name), juce::dontSendNotification);
+    else if (! isUser && name == proc.getProgramName (current))
         presetBox.setSelectedId (current + 1, juce::dontSendNotification);
     else
         presetBox.setText (name, juce::dontSendNotification);
 
     presetTip.setText (proc.getPresetTip(), juce::dontSendNotification);
+}
+
+void MainPanel::refreshPresetBox()
+{
+    presetBox.clear (juce::dontSendNotification);
+    for (int i = 0; i < proc.getNumPrograms(); ++i)
+        presetBox.addItem (proc.getProgramName (i), i + 1);
+
+    userPresets = BitBuddyProcessor::getUserPresetNames();
+    if (! userPresets.isEmpty())
+    {
+        presetBox.addSectionHeading ("MY PRESETS");
+        for (int i = 0; i < userPresets.size(); ++i)
+            presetBox.addItem (userPresets[i], kUserPresetIdBase + i);
+    }
+
+    if (proc.isUserPresetLoaded())
+    {
+        presetBox.addSeparator();
+        presetBox.addItem ("Delete \"" + proc.getDisplayPresetName() + "\"...", kDeletePresetId);
+    }
+}
+
+void MainPanel::askToSavePreset()
+{
+    // A dialog inside BitBuddy's own window (works the same in every DAW and on phones)
+    auto* w = new juce::AlertWindow ("SAVE PRESET", "Give your sound a name.\nIt will appear under MY PRESETS in the preset menu.",
+                                     juce::MessageBoxIconType::NoIcon);
+    w->addTextEditor ("name", proc.getDisplayPresetName().trimCharactersAtEnd (" *"), "Name:");
+    w->addButton ("SAVE", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("CANCEL", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    addAndMakeVisible (w);
+    w->setCentrePosition (getLocalBounds().getCentre());
+
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto name = w->getTextEditorContents ("name").trim();
+        if (name.isEmpty())
+            return;
+
+        if (BitBuddyProcessor::getUserPresetNames().contains (name))
+        {
+            juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                              .withTitle ("REPLACE PRESET?")
+                                              .withMessage ("You already have a preset called \"" + name + "\". Replace it with this sound?")
+                                              .withButton ("REPLACE")
+                                              .withButton ("CANCEL")
+                                              .withAssociatedComponent (this),
+                                          [safe = juce::Component::SafePointer<MainPanel> (this), name] (int choice)
+                                          {
+                                              if (safe != nullptr && choice == 1)
+                                                  safe->savePresetAs (name);
+                                          });
+            return;
+        }
+        savePresetAs (name);
+    }), true);
+}
+
+void MainPanel::savePresetAs (const juce::String& name)
+{
+    if (! proc.saveUserPreset (name))
+        juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                          .withTitle ("COULDN'T SAVE")
+                                          .withMessage ("BitBuddy couldn't write to " + BitBuddyProcessor::getUserPresetFolder().getFullPathName())
+                                          .withButton ("OK")
+                                          .withAssociatedComponent (this),
+                                      nullptr);
+    lastPresetName = {};   // re-sync the menu
+}
+
+void MainPanel::askToDeletePreset()
+{
+    const auto name = proc.getDisplayPresetName();
+    lastPresetName = {};   // put the menu back to the current preset name
+    juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                      .withTitle ("DELETE PRESET?")
+                                      .withMessage ("Delete your preset \"" + name + "\"? It goes to the recycle bin / trash. "
+                                                    "The sound you hear now stays until you pick another one.")
+                                      .withButton ("DELETE")
+                                      .withButton ("CANCEL")
+                                      .withAssociatedComponent (this),
+                                  [safe = juce::Component::SafePointer<MainPanel> (this), name] (int choice)
+                                  {
+                                      if (safe == nullptr || choice != 1)
+                                          return;
+                                      BitBuddyProcessor::deleteUserPreset (name);
+                                      safe->proc.markRemixed();
+                                      safe->lastPresetName = {};
+                                  });
 }
 
 void MainPanel::mouseEnter (const juce::MouseEvent& e)

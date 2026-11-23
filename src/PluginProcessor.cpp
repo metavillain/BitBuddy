@@ -274,6 +274,7 @@ void BitBuddyProcessor::loadProgram (int index)
     index = juce::jlimit (0, getNumPrograms() - 1, index);
     currentProgram = index;
     customName = {};
+    userPresetLoaded = false;
     bb::applyPreset (apvts, index);
 }
 
@@ -300,20 +301,25 @@ juce::String BitBuddyProcessor::getDisplayPresetName() const
 
 juce::String BitBuddyProcessor::getPresetTip() const
 {
+    if (userPresetLoaded)
+        return "One of your own presets.";
+    if (customName.endsWithChar ('*'))
+        return "Remixed! Press SAVE to keep it as one of your presets.";
     if (customName.isNotEmpty())
-        return "A random sound - tweak it, or roll again!";
+        return "A random sound - tweak it, roll again, or SAVE it!";
     return bb::factoryPresets()[(size_t) currentProgram].tip;
 }
 
-void BitBuddyProcessor::randomize()
+void BitBuddyProcessor::setParamValue (const char* id, float realValue)
 {
-    juce::Random rng;
+    if (auto* p = apvts.getParameter (id))
+        p->setValueNotifyingHost (p->convertTo0to1 (realValue));
+}
 
-    auto set = [this] (const char* id, float value)
-    {
-        if (auto* p = apvts.getParameter (id))
-            p->setValueNotifyingHost (p->convertTo0to1 (value));
-    };
+// Random but musical settings for one part of BitBuddy
+void BitBuddyProcessor::rollSection (Section section, juce::Random& rng)
+{
+    auto set = [this] (const char* id, float value) { setParamValue (id, value); };
     auto pick = [&rng] (std::initializer_list<float> options)
     {
         const auto i = rng.nextInt ((int) options.size());
@@ -322,41 +328,197 @@ void BitBuddyProcessor::randomize()
     auto range = [&rng] (float lo, float hi) { return lo + rng.nextFloat() * (hi - lo); };
     auto chance = [&rng] (float probability) { return rng.nextFloat() < probability; };
 
-    set (bb::ids::wave, chance (0.06f) ? 7.0f : (float) rng.nextInt (7));
+    switch (section)
+    {
+        case Section::Sound:
+            set (bb::ids::wave, chance (0.06f) ? 7.0f : (float) rng.nextInt (7));
+            break;
 
-    set (bb::ids::attack,  pick ({ 0.001f, 0.003f, 0.01f, 0.05f, 0.2f }));
-    set (bb::ids::decay,   range (0.05f, 1.0f));
-    set (bb::ids::sustain, chance (0.3f) ? 0.0f : range (0.3f, 1.0f));
-    set (bb::ids::release, range (0.02f, 0.6f));
+        case Section::Shape:
+            set (bb::ids::attack,  pick ({ 0.001f, 0.003f, 0.01f, 0.05f, 0.2f }));
+            set (bb::ids::decay,   range (0.05f, 1.0f));
+            set (bb::ids::sustain, chance (0.3f) ? 0.0f : range (0.3f, 1.0f));
+            set (bb::ids::release, range (0.02f, 0.6f));
+            break;
 
-    const float arp = rng.nextFloat();
-    set (bb::ids::arpMode,    arp < 0.4f ? 0.0f : (arp < 0.8f ? 1.0f : 2.0f));
-    set (bb::ids::arpChord,   (float) rng.nextInt (bb::kSmartChordIndex + 1));
-    set (bb::ids::arpPattern, (float) rng.nextInt (5));
-    set (bb::ids::arpSpeed,   (float) rng.nextInt (8));
-    set (bb::ids::arpOctaves, (float) (1 + rng.nextInt (2)));
+        case Section::Chords:
+        {
+            const float arp = rng.nextFloat();
+            set (bb::ids::arpMode,    arp < 0.4f ? 0.0f : (arp < 0.8f ? 1.0f : 2.0f));
+            set (bb::ids::arpChord,   (float) rng.nextInt (bb::kSmartChordIndex + 1));
+            set (bb::ids::arpPattern, (float) rng.nextInt (5));
+            set (bb::ids::arpSpeed,   (float) rng.nextInt (8));
+            set (bb::ids::arpOctaves, (float) (1 + rng.nextInt (2)));
+            break;
+        }
 
-    set (bb::ids::vibDepth, chance (0.5f) ? range (0.1f, 0.6f) : 0.0f);
-    set (bb::ids::vibRate,  range (4.0f, 8.0f));
-    set (bb::ids::vibDelay, range (0.0f, 0.4f));
+        case Section::Movement:
+        {
+            set (bb::ids::vibDepth, chance (0.5f) ? range (0.1f, 0.6f) : 0.0f);
+            set (bb::ids::vibRate,  range (4.0f, 8.0f));
+            set (bb::ids::vibDelay, range (0.0f, 0.4f));
 
-    const bool sweep = chance (0.25f);
-    set (bb::ids::sweepAmt,  sweep ? (float) ((chance (0.5f) ? 1 : -1) * (1 + rng.nextInt (24))) : 0.0f);
-    set (bb::ids::sweepTime, range (0.05f, 0.4f));
+            const bool sweep = chance (0.25f);
+            set (bb::ids::sweepAmt,  sweep ? (float) ((chance (0.5f) ? 1 : -1) * (1 + rng.nextInt (24))) : 0.0f);
+            set (bb::ids::sweepTime, range (0.05f, 0.4f));
 
-    set (bb::ids::pwm,       chance (0.3f) ? range (0.2f, 0.8f) : 0.0f);
-    set (bb::ids::glide,     chance (0.2f) ? range (0.02f, 0.15f) : 0.0f);
-    set (bb::ids::voiceMode, chance (0.25f) ? 1.0f : 0.0f);
+            set (bb::ids::pwm,       chance (0.3f) ? range (0.2f, 0.8f) : 0.0f);
+            set (bb::ids::glide,     chance (0.2f) ? range (0.02f, 0.15f) : 0.0f);
+            set (bb::ids::voiceMode, chance (0.25f) ? 1.0f : 0.0f);
+            break;
+        }
 
-    set (bb::ids::bits, chance (0.5f) ? 8.0f : (float) (4 + rng.nextInt (13)));
-    set (bb::ids::rate, chance (0.7f) ? 48000.0f : range (4000.0f, 22050.0f));
+        case Section::Crunch:
+        {
+            set (bb::ids::bits, chance (0.5f) ? 8.0f : (float) (4 + rng.nextInt (13)));
+            set (bb::ids::rate, chance (0.7f) ? 48000.0f : range (4000.0f, 22050.0f));
 
-    const bool useEcho = chance (0.5f);
-    set (bb::ids::echoMix,      useEcho ? range (0.15f, 0.4f) : 0.0f);
-    set (bb::ids::echoTime,     (float) rng.nextInt (6));
-    set (bb::ids::echoFeedback, range (0.2f, 0.5f));
+            const bool useEcho = chance (0.5f);
+            set (bb::ids::echoMix,      useEcho ? range (0.15f, 0.4f) : 0.0f);
+            set (bb::ids::echoTime,     (float) rng.nextInt (6));
+            set (bb::ids::echoFeedback, range (0.2f, 0.5f));
+            break;
+        }
+    }
+}
+
+void BitBuddyProcessor::randomize()
+{
+    juce::Random rng;
+    for (auto s : { Section::Sound, Section::Shape, Section::Chords, Section::Movement, Section::Crunch })
+        rollSection (s, rng);
 
     customName = "Surprise #" + juce::String (++randomCount);
+    userPresetLoaded = false;
+}
+
+void BitBuddyProcessor::rollSection (Section section)
+{
+    juce::Random rng;
+    rollSection (section, rng);
+    markRemixed();
+}
+
+void BitBuddyProcessor::markRemixed()
+{
+    const auto base = getDisplayPresetName();
+    if (! base.endsWithChar ('*'))
+        customName = base + " *";
+    userPresetLoaded = false;
+}
+
+void BitBuddyProcessor::mutate()
+{
+    // Every knob moves a little (about +/- 12% of its range); now and then a
+    // switch flips to a neighbouring setting. The waveform, Key and Scale stay.
+    juce::Random rng;
+    for (auto* p : getParameters())
+    {
+        auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p);
+        if (rp == nullptr || bb::isSongSetting (rp->getParameterID()) || rp->getParameterID() == bb::ids::wave)
+            continue;
+
+        const float now = rp->getValue();
+        if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (rp))
+        {
+            if (rng.nextFloat() < 0.15f)
+            {
+                const int n = choice->choices.size();
+                const int index = juce::jlimit (0, n - 1, choice->getIndex() + (rng.nextBool() ? 1 : -1));
+                rp->setValueNotifyingHost (rp->convertTo0to1 ((float) index));
+            }
+            continue;
+        }
+
+        const float nudge = (rng.nextFloat() + rng.nextFloat() - 1.0f) * 0.12f;   // gentle, mostly small
+        rp->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, now + nudge));
+    }
+    markRemixed();
+}
+
+//==============================================================================
+juce::File BitBuddyProcessor::getUserPresetFolder()
+{
+   #if JUCE_MAC
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("Application Support/BitBuddy/Presets");
+   #else
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("BitBuddy/Presets");
+   #endif
+}
+
+juce::StringArray BitBuddyProcessor::getUserPresetNames()
+{
+    juce::StringArray names;
+    for (const auto& f : getUserPresetFolder().findChildFiles (juce::File::findFiles, false, "*.bbpreset"))
+        names.add (f.getFileNameWithoutExtension());
+    names.sortNatural();
+    return names;
+}
+
+bool BitBuddyProcessor::saveUserPreset (const juce::String& rawName)
+{
+    const auto name = juce::File::createLegalFileName (rawName.trim()).substring (0, 40).trim();
+    if (name.isEmpty())
+        return false;
+
+    juce::XmlElement xml ("BitBuddyPreset");
+    xml.setAttribute ("name", name);
+   #ifdef JucePlugin_VersionString
+    xml.setAttribute ("version", JucePlugin_VersionString);
+   #endif
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+            if (! bb::isSongSetting (rp->getParameterID()))
+            {
+                auto* e = xml.createNewChildElement ("PARAM");
+                e->setAttribute ("id", rp->getParameterID());
+                e->setAttribute ("value", (double) rp->convertFrom0to1 (rp->getValue()));
+            }
+
+    auto folder = getUserPresetFolder();
+    if (! folder.createDirectory())
+        return false;
+    if (! xml.writeTo (folder.getChildFile (name + ".bbpreset")))
+        return false;
+
+    customName = name;
+    userPresetLoaded = true;
+    return true;
+}
+
+bool BitBuddyProcessor::loadUserPreset (const juce::String& name)
+{
+    const auto xml = juce::XmlDocument::parse (getUserPresetFolder().getChildFile (name + ".bbpreset"));
+    if (xml == nullptr || ! xml->hasTagName ("BitBuddyPreset"))
+        return false;
+
+    // Anything the file doesn't mention (e.g. made with an older BitBuddy) goes back to its default
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+            if (! bb::isSongSetting (rp->getParameterID()))
+                rp->setValueNotifyingHost (rp->getDefaultValue());
+
+    for (auto* e : xml->getChildWithTagNameIterator ("PARAM"))
+    {
+        const auto id = e->getStringAttribute ("id");
+        if (bb::isSongSetting (id))
+            continue;
+        if (auto* rp = apvts.getParameter (id))
+            rp->setValueNotifyingHost (rp->convertTo0to1 ((float) e->getDoubleAttribute ("value")));
+    }
+
+    customName = name;
+    userPresetLoaded = true;
+    return true;
+}
+
+bool BitBuddyProcessor::deleteUserPreset (const juce::String& name)
+{
+    // To the recycle bin / trash where there is one (phones have none)
+    const auto file = getUserPresetFolder().getChildFile (name + ".bbpreset");
+    return file.moveToTrash() || file.deleteFile();
 }
 
 //==============================================================================
@@ -365,6 +527,7 @@ void BitBuddyProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     state.setProperty ("program", currentProgram, nullptr);
     state.setProperty ("customName", customName, nullptr);
+    state.setProperty ("userPreset", userPresetLoaded, nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -379,6 +542,7 @@ void BitBuddyProcessor::setStateInformation (const void* data, int sizeInBytes)
             auto tree = juce::ValueTree::fromXml (*xml);
             currentProgram = juce::jlimit (0, getNumPrograms() - 1, (int) tree.getProperty ("program", 0));
             customName = tree.getProperty ("customName", "").toString();
+            userPresetLoaded = (bool) tree.getProperty ("userPreset", false);
             apvts.replaceState (tree);
         }
     }

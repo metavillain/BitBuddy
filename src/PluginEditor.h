@@ -61,6 +61,18 @@ private:
 };
 
 //==============================================================================
+/** Little pixel die in a section's corner: re-rolls just that section. */
+class DiceButton : public juce::Button
+{
+public:
+    explicit DiceButton (juce::Colour accent);
+    void paintButton (juce::Graphics&, bool isMouseOver, bool isButtonDown) override;
+
+private:
+    juce::Colour accent;
+};
+
+//==============================================================================
 /** Retro green "screen" that shows the live waveform. */
 class Scope : public juce::Component, public juce::SettableTooltipClient
 {
@@ -167,9 +179,18 @@ private:
     // header
     juce::TextButton helpButton { "? HELP" };
     juce::TextButton prevButton { "<" }, nextButton { ">" };
+    juce::TextButton saveButton { "SAVE" }, mutateButton { "MUTATE" };
     juce::TextButton surpriseButton { "SURPRISE ME!" };
     juce::ComboBox presetBox;
     juce::Label presetTip;
+    juce::StringArray userPresets;
+    void refreshPresetBox();
+    void askToSavePreset();
+    void savePresetAs (const juce::String& name);
+    void askToDeletePreset();
+
+    // one dice button per section
+    DiceButton diceSound, diceShape, diceChords, diceMovement, diceCrunch;
 
     // 1. pick a sound
     ParamButtons waveSelector;
@@ -213,6 +234,7 @@ private:
     juce::Rectangle<int> s1, sScope, s2, s3, s4, s5, s6, sPlay, hintArea;
     int lastWave = -1, lastArpMode = -1, lastScaleState = -1;
     juce::String lastPresetName;
+    bool lastWasUserPreset = false;
 };
 } // namespace bb
 

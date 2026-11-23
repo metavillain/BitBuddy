@@ -626,6 +626,80 @@ static int runTests (const String& path)
                    String (roundToInt (factor)) + "x faster than real time (" + String (100.0 / factor, 3) + "% of one core)");
     }
 
+    // ---- 11. My Presets, dice, MUTATE (BitBuddy's own processor, as the UI uses it) ----
+    std::cout << "\n  -- my presets, dice, mutate --\n";
+    {
+        BitBuddyProcessor proc;
+        auto get = [&] (const char* id) { auto* p = proc.apvts.getParameter (id); return p->convertFrom0to1 (p->getValue()); };
+        auto set = [&] (const char* id, float v) { auto* p = proc.apvts.getParameter (id); p->setValueNotifyingHost (p->convertTo0to1 (v)); };
+        auto snapshot = [&]
+        {
+            std::map<String, float> values;
+            for (auto* p : proc.getParameters())
+                if (auto* rp = dynamic_cast<RangedAudioParameter*> (p))
+                    values[rp->getParameterID()] = rp->getValue();
+            return values;
+        };
+
+        // Save -> change everything -> load: the sound comes back, your Key/Scale stay
+        const String name = "zz BitBuddy test " + String (Time::currentTimeMillis());
+        proc.selectPreset (1);
+        set ("attack", 0.5f); set ("echoMix", 0.42f); set ("wave", 4.0f); set ("scale", 2.0f);
+        const bool saved = proc.saveUserPreset (name);
+        proc.selectPreset (0);
+        set ("scale", 5.0f);
+        const bool loaded = proc.loadUserPreset (name);
+        const bool listed = BitBuddyProcessor::getUserPresetNames().contains (name);
+        const bool ok = saved && loaded && listed && std::abs (get ("attack") - 0.5f) < 0.01f
+                     && std::abs (get ("echoMix") - 0.42f) < 0.01f && juce::roundToInt (get ("wave")) == 4
+                     && juce::roundToInt (get ("scale")) == 5 && proc.isUserPresetLoaded() && proc.getDisplayPresetName() == name;
+        res.check (ok, "MY PRESETS: save, reload (Key/Scale untouched), listed",
+                   String (saved ? "saved" : "NOT saved") + ", " + (loaded ? "loaded" : "NOT loaded") + ", attack "
+                       + String (get ("attack"), 2) + ", echo " + String (get ("echoMix"), 2) + ", scale " + String (get ("scale"), 0));
+        const bool deleted = BitBuddyProcessor::getUserPresetFolder().getChildFile (name + ".bbpreset").deleteFile()
+                          && ! BitBuddyProcessor::getUserPresetNames().contains (name);
+        res.check (deleted, "MY PRESETS: test preset removed again", BitBuddyProcessor::getUserPresetFolder().getFullPathName());
+
+        // Dice on SHAPE IT: only the envelope changes
+        proc.selectPreset (1);
+        set ("scale", 3.0f);
+        const auto before = snapshot();
+        proc.rollSection (BitBuddyProcessor::Section::Shape);
+        proc.rollSection (BitBuddyProcessor::Section::Shape);
+        const auto after = snapshot();
+        StringArray changed;
+        for (auto& [id, v] : before)
+            if (std::abs (after.at (id) - v) > 1.0e-6f)
+                changed.add (id);
+        const StringArray shapeIds { "attack", "decay", "sustain", "release" };
+        bool onlyShape = ! changed.isEmpty();
+        for (auto& id : changed)
+            onlyShape = onlyShape && shapeIds.contains (id);
+        res.check (onlyShape && proc.getDisplayPresetName().endsWithChar ('*'), "DICE (shape): only the envelope changes, name gets *",
+                   changed.joinIntoString (",") + " | " + proc.getDisplayPresetName());
+
+        // MUTATE: many small changes; wave, Key, Scale and volume stay
+        proc.selectPreset (1);
+        const auto m0 = snapshot();
+        for (int i = 0; i < 3; ++i)
+            proc.mutate();
+        const auto m1 = snapshot();
+        int moved = 0;
+        float biggest = 0.0f;
+        const StringArray switches { "arpMode", "arpChord", "arpPattern", "arpSpeed", "echoTime", "voiceMode" };
+        for (auto& [id, v] : m0)
+            if (std::abs (m1.at (id) - v) > 1.0e-6f)
+            {
+                ++moved;
+                if (! switches.contains (id))
+                    biggest = jmax (biggest, std::abs (m1.at (id) - v));
+            }
+        const bool kept = m0.at ("wave") == m1.at ("wave") && m0.at ("scaleKey") == m1.at ("scaleKey")
+                       && m0.at ("scale") == m1.at ("scale") && m0.at ("volume") == m1.at ("volume");
+        res.check (kept && moved >= 8 && biggest <= 0.37f, "MUTATE: nudges many knobs a little, keeps wave/Key/Scale/volume",
+                   String (moved) + " params moved, biggest knob change " + String (roundToInt (biggest * 100.0f)) + "% (3 mutates)");
+    }
+
     std::cout << "\n  " << res.passed << " passed, " << res.failed << " failed\n";
     return res.failed;
 }

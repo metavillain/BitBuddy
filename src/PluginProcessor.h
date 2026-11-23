@@ -82,10 +82,29 @@ public:
     void selectPreset (int index);
     /** "Surprise me!" - a random but musical sound. */
     void randomize();
+
+    /** The parts of BitBuddy each dice button can re-roll on its own. */
+    enum class Section { Sound, Shape, Chords, Movement, Crunch };
+    void rollSection (Section);
+    /** MUTATE: nudges the current sound a little instead of starting over. */
+    void mutate();
+
     /** Name to show in the preset box ("Hero Lead", "Surprise #3"...). */
     juce::String getDisplayPresetName() const;
     /** One-line tip for the current preset (empty for random sounds). */
     juce::String getPresetTip() const;
+
+    //==========================================================================
+    // My Presets: your own sounds, saved as files (they show up in every DAW
+    // project and in the BitBuddy app)
+    static juce::File getUserPresetFolder();
+    static juce::StringArray getUserPresetNames();
+    bool saveUserPreset (const juce::String& name);
+    bool loadUserPreset (const juce::String& name);
+    static bool deleteUserPreset (const juce::String& name);
+    bool isUserPresetLoaded() const noexcept { return userPresetLoaded; }
+    /** The sound no longer matches a saved preset: show its name with a "*". */
+    void markRemixed();
 
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;   // on-screen keyboard -> synth
@@ -106,8 +125,12 @@ private:
     bool effectsIdle = true;   // no notes and all effect tails have died away
     int quietSamples = 0;      // consecutive silent output samples with no notes
 
+    void rollSection (Section, juce::Random&);
+    void setParamValue (const char* id, float realValue);
+
     int currentProgram = 0;
     juce::String customName;
+    bool userPresetLoaded = false;
     int randomCount = 0;
 
     std::atomic<float>* pWave = nullptr;
