@@ -132,6 +132,7 @@ private:
     bb::Crusher crusher;
     bb::PingPongEcho echo;
     bb::SidFilter filter;
+    bb::ConsoleTone consoleTone;
     juce::SmoothedValue<float> outputGain;
     float echoMix = 0.0f, echoFeedback = 0.0f;
     bool echoWasOn = false, filterWasOn = false;
@@ -180,6 +181,7 @@ private:
     std::atomic<float>* pFilterCutoff = nullptr;
     std::atomic<float>* pFilterReso = nullptr;
     std::atomic<float>* pFilterEnv = nullptr;
+    std::atomic<float>* pConsole = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BitBuddyProcessor)
 };

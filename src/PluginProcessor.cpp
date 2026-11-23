@@ -51,6 +51,7 @@ BitBuddyProcessor::BitBuddyProcessor()
     pFilterCutoff = get (bb::ids::filterCutoff);
     pFilterReso   = get (bb::ids::filterReso);
     pFilterEnv    = get (bb::ids::filterEnv);
+    pConsole      = get (bb::ids::console);
 
     setCustomWave (bb::defaultCustomWave());
 }
@@ -120,6 +121,7 @@ void BitBuddyProcessor::prepareToPlay (double sampleRate, int)
     crusher.prepare (sampleRate);
     echo.prepare (sampleRate);
     filter.prepare (sampleRate);
+    consoleTone.prepare (sampleRate);
     dcBlocker.reset();
     effectsIdle = true;
     echoWasOn = filterWasOn = false;
@@ -175,7 +177,9 @@ void BitBuddyProcessor::updateEngineParams()
     ep.pwm       = pPwm->load();
     ep.glide     = pGlide->load();
     ep.mono      = idx (pVoiceMode, 1) == 1;
+    ep.console   = (bb::Console) idx (pConsole, 3);
     engine.setParams (ep);
+    consoleTone.setConsole ((int) ep.console);
 
     crusher.setParams ((int) std::lround (pBits->load()), pRate->load());
     filter.setParams (idx (pFilterType, 3), pFilterCutoff->load(), pFilterReso->load(), pFilterEnv->load(),
@@ -287,6 +291,7 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             }
             x = filter.process (x);
         }
+        x = consoleTone.process (x);
         x = crusher.process (x);
 
         const float g = outputGain.getNextValue();
@@ -326,6 +331,7 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         crusher.reset();
         echo.clear();
         filter.reset();
+        consoleTone.reset();
     }
 
     for (int ch = 2; ch < numChannels; ++ch)
@@ -418,6 +424,7 @@ void BitBuddyProcessor::rollSection (Section section, juce::Random& rng)
     {
         case Section::Sound:
             set (bb::ids::wave, chance (0.06f) ? 7.0f : (float) rng.nextInt (7));
+            set (bb::ids::console, chance (0.7f) ? 0.0f : (float) (1 + rng.nextInt (3)));
             break;
 
         case Section::Shape:

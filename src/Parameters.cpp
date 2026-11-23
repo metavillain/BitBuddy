@@ -12,6 +12,7 @@ juce::StringArray voiceModeNames()  { return { "Poly", "Mono" }; }
 juce::StringArray keyNames()        { return { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }; }
 juce::StringArray scaleNames()      { return { "Off", "Major", "Minor", "Major Penta", "Minor Penta", "Blues", "Dorian", "Harm. Minor" }; }
 juce::StringArray filterTypeNames() { return { "Off", "Low Pass", "Band Pass", "High Pass" }; }
+juce::StringArray consoleNames()    { return { "Modern", "NES", "Game Boy", "C64" }; }
 
 namespace
 {
@@ -136,6 +137,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                 [] (float v, int) { return v < 1000.0f ? String (juce::roundToInt (v)) + " Hz" : String (v / 1000.0f, 1) + " kHz"; });
     addFloatV2 (ids::filterReso,   "Resonance",  { 0.0f, 1.0f }, 0.35f, percentText);
     addFloatV2 (ids::filterEnv,    "Filter Env", { 0.0f, 1.0f }, 0.0f,  percentText);
+
+    // 8. Console mode (added in 1.1): sound like a real NES / Game Boy / C64
+    addChoice (ids::console, "Console", consoleNames(), 0, 2);
 
     return layout;
 }

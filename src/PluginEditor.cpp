@@ -999,6 +999,12 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     addAndMakeVisible (waveInfo);
     addAndMakeVisible (scope);
     addChildComponent (waveDrawer);
+    setupCombo (consoleBox, consoleLabel, "CHIP", consoleNames(),
+                "CHIP: make BitBuddy behave like a real console. NES: only 2 notes at once, 16 volume steps, NES tuning "
+                "(high notes a bit off), on/off triangle. GAME BOY: 2 notes, 16 volume steps, softer top. C64: 3 notes - "
+                "pair it with the C64 FILTER! MODERN: no limits.",
+                pal::yellow);
+    consoleAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, ids::console, consoleBox);
 
     // --- 2. shape it ---
     for (auto* k : { &attack, &decay, &sustain, &release })
@@ -1223,6 +1229,8 @@ void MainPanel::resized()
     waveInfo.setBounds (18, 180, 584, 48);
     scope.setBounds (630, 90, 350, 132);
     waveDrawer.setBounds (scope.getBounds());
+    consoleLabel.setBounds (426, 71, 36, 12);
+    consoleBox.setBounds (462, 67, 112, 20);
 
     s2 = { 10, 238, 470, 150 };
     int x = 20;

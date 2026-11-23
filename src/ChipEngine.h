@@ -28,6 +28,9 @@ constexpr int kCustomWaveSteps = 32;
 using CustomWave = std::array<std::uint8_t, kCustomWaveSteps>;
 CustomWave defaultCustomWave();   // a 4-bit sine
 enum class ArpMode : int { Off = 0, Chord, Notes };
+
+// Console modes copy each real chip's limits and quirks (Modern = no limits)
+enum class Console : int { Modern = 0, NES, GameBoy, C64 };
 enum class ArpPattern : int { Up = 0, Down, UpDown, Random, Once };
 
 struct EngineParams
@@ -51,6 +54,7 @@ struct EngineParams
     bool smartChords = false;                                  // CHORD mode picks the chord from the scale
 
     CustomWave customWave = defaultCustomWave();               // for Wave::Custom
+    Console console = Console::Modern;
 };
 
 class ChipEngine
@@ -74,6 +78,16 @@ public:
 
     /** True when no voice is sounding. */
     bool isIdle() const noexcept;
+
+    /** How many voices are sounding right now. */
+    int getNumActiveVoices() const noexcept;
+
+    /** How many notes can sound at once: 8, or the console's channel count. */
+    int getVoiceLimit() const noexcept;
+
+    /** The frequency a real chip would actually play for a wanted frequency
+        (its pitch registers only have so many steps). Modern returns hz unchanged. */
+    static float chipFrequency (Console, Wave, float hz) noexcept;
 
 private:
     enum class Stage { Idle, Attack, Decay, Sustain, Release };
@@ -117,9 +131,13 @@ private:
         float dToneMul = 0, dNoiseMul = 0, dSweepMul = 0;
         bool choking = false;
         float chokeGain = 1.0f;
+
+        float gate = 0.0f;   // NES triangle: no volume control, just on / off (smoothed against clicks)
     };
 
     float renderTone (Voice&) noexcept;
+    float chipLevel (Voice&) noexcept;
+    double noiseClock (double wantedClock) const noexcept;
     float renderDrum (Voice&) noexcept;
     void updateModulation (Voice&) noexcept;
     float oscillate (Voice&) noexcept;

@@ -270,6 +270,9 @@ private:
     // 1. pick a sound
     ParamButtons waveSelector;
     juce::Label waveInfo;
+    juce::ComboBox consoleBox;
+    juce::Label consoleLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> consoleAtt;
     Scope scope;
     WaveDrawer waveDrawer;
 

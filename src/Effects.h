@@ -181,6 +181,47 @@ private:
     float a1 = 0.0f, a2 = 0.0f, a3 = 0.0f, ic1 = 0.0f, ic2 = 0.0f;
 };
 
+// The tone of each console's output circuit: the NES trims deep bass and the
+// very top, the Game Boy sounds a bit muffled, the C64 a touch soft.
+class ConsoleTone
+{
+public:
+    void prepare (double sampleRate) noexcept { sr = sampleRate; reset(); }
+    void reset() noexcept { hpX = hpY = lpY = 0.0f; }
+
+    /** 0 Modern (untouched), 1 NES, 2 Game Boy, 3 C64 */
+    void setConsole (int console) noexcept
+    {
+        float hpHz = 0.0f, lpHz = 0.0f;
+        switch (console)
+        {
+            case 1: hpHz = 90.0f; lpHz = 14000.0f; break;
+            case 2: hpHz = 30.0f; lpHz = 9000.0f;  break;
+            case 3: hpHz = 20.0f; lpHz = 12000.0f; break;
+            default: break;
+        }
+        on = console != 0;
+        hpCoef = hpHz > 0.0f ? (float) std::exp (-6.283185307 * hpHz / sr) : 1.0f;
+        lpCoef = lpHz > 0.0f ? (float) (1.0 - std::exp (-6.283185307 * std::min ((double) lpHz, sr * 0.45) / sr)) : 1.0f;
+    }
+
+    float process (float x) noexcept
+    {
+        if (! on)
+            return x;
+        const float hp = hpCoef * (hpY + x - hpX);   // one-pole high-pass
+        hpX = x;
+        hpY = hp;
+        lpY += lpCoef * (hp - lpY);                   // one-pole low-pass
+        return lpY;
+    }
+
+private:
+    double sr = 44100.0;
+    bool on = false;
+    float hpCoef = 1.0f, lpCoef = 1.0f, hpX = 0.0f, hpY = 0.0f, lpY = 0.0f;
+};
+
 // Echo that bounces between the left and right speaker.
 class PingPongEcho
 {

@@ -25,6 +25,11 @@ const std::vector<Preset>& factoryPresets()
             { vibDepth, 0.35f }, { vibRate, 6.0f }, { vibDelay, 0.22f },
             { echoMix, 0.25f }, { echoTime, et::e8d }, { echoFeedback, 0.3f } } },
 
+        { "Real NES Lead", "Sounds like the real chip: 2 notes at once, 16 volume steps, NES tuning. Play a melody!",
+          { { console, 1.0f }, { wave, w::pulse25 }, { attack, 0.001f }, { decay, 0.7f }, { sustain, 0.5f }, { release, 0.12f },
+            { vibDepth, 0.3f }, { vibRate, 6.5f }, { vibDelay, 0.25f },
+            { echoMix, 0.2f }, { echoTime, et::e8d }, { echoFeedback, 0.25f } } },
+
         { "Thin Lead", "Very thin 12.5% pulse - cuts through any mix.",
           { { wave, w::pulse12 }, { decay, 0.3f }, { sustain, 0.7f }, { release, 0.1f },
             { vibDepth, 0.25f }, { vibRate, 7.0f }, { vibDelay, 0.3f }, { echoMix, 0.2f } } },

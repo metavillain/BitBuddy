@@ -301,9 +301,9 @@ static int runTests (const String& path)
     int automatable = 0;
     for (auto* prm : plugin->getParameters())
         automatable += prm->isAutomatable() ? 1 : 0;
-    res.check (automatable >= 30 && automatable <= 32, "Automatable parameters in the DAW",
+    res.check (automatable >= 31 && automatable <= 33, "Automatable parameters in the DAW",
                String (automatable) + " (+" + String (plugin->getParameters().size() - automatable) + " hidden MIDI-CC slots)");
-    res.check (plugin->getNumPrograms() == 24, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
+    res.check (plugin->getNumPrograms() == 25, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
 
     // ---- 2. Every preset makes sound, stays finite, and goes silent --------
     std::cout << "\n  -- every preset: sound / no NaN / no clipping / no stuck notes --\n";
@@ -501,6 +501,58 @@ static int runTests (const String& path)
         res.check (ok, "SMART chords (C major): Dm, Bdim, F", detail);
     }
     setScale (0, 0);   // leave Scale Lock off for the rest of the tests
+
+    // ---- 4d. Console modes --------------------------------------------------
+    std::cout << "\n  -- console modes --\n";
+    {
+        // NES pitch registers: A6 (1760 Hz) can only be 1747.8 Hz on a real NES (period 63)
+        selectProgram (*plugin, "Real NES Lead");
+        setParam (*plugin, "Vibrato", 0.0f);
+        setParam (*plugin, "Echo", 0.0f);
+        const double nesHz = pitchAt (renderNotes (*plugin, { { 0.0, 1.0, 93, 0.8f } }, 1.0, sr), 0.2, 8192, sr, 100.0);
+        const double expected = 1789773.0 / (16.0 * 64.0);
+        res.check (std::abs (centsOff (nesHz, expected)) < 4.0 && std::abs (centsOff (nesHz, 1760.0)) > 8.0,
+                   "NES mode: A6 plays at the NES's own pitch (1747.8 Hz)", String (nesHz, 2) + " Hz");
+
+        // Notes at once: NES 2, C64 3, Modern 8
+        String detail;
+        bool ok = true;
+        for (auto [console, expectVoices] : { std::pair { bb::Console::NES, 2 }, { bb::Console::GameBoy, 2 },
+                                              { bb::Console::C64, 3 }, { bb::Console::Modern, 5 } })
+        {
+            bb::ChipEngine e;
+            e.prepare (sr);
+            bb::EngineParams ep;
+            ep.console = console;
+            e.setParams (ep);
+            float buf[256] {};
+            for (int n : { 60, 64, 67, 71, 74 })
+            {
+                e.noteOn (n, 0.8f);
+                e.render (buf, 256);
+            }
+            ok = ok && e.getNumActiveVoices() == expectVoices;
+            detail << e.getNumActiveVoices() << " ";
+        }
+        res.check (ok, "Console note limits: NES 2, Game Boy 2, C64 3, Modern all 5", "voices: " + detail);
+
+        // NES triangle has no volume control: it doesn't fade while you hold the key
+        auto holdRatio = [&] (int console)
+        {
+            selectProgram (*plugin, "Classic Square");
+            setParam (*plugin, "Wave", 3.0f / 8.0f);
+            setParam (*plugin, "Console", (float) console / 3.0f);
+            setParam (*plugin, "Decay", 0.3f);       // ~0.1 s decay (normalised value)...
+            setParam (*plugin, "Sustain", 0.1f);     // ...down to a quiet sustain
+            const auto out = renderNotes (*plugin, { { 0.0, 1.0, 57, 0.8f } }, 1.0, sr);
+            return (double) out.getRMSLevel (0, (int) (0.6 * sr), (int) (0.2 * sr))
+                 / jmax (1.0e-9, (double) out.getRMSLevel (0, (int) (0.01 * sr), (int) (0.04 * sr)));
+        };
+        const double nesHold = holdRatio (1), modernHold = holdRatio (0);
+        res.check (nesHold > 0.8 && modernHold < 0.5, "NES triangle: on/off only (no fade), Modern fades",
+                   "held level NES " + String (roundToInt (nesHold * 100.0)) + "%, Modern " + String (roundToInt (modernHold * 100.0)) + "%");
+        setParam (*plugin, "Console", 0.0f);
+    }
 
     // ---- 4c. C64 filter -----------------------------------------------------
     std::cout << "\n  -- C64 filter --\n";

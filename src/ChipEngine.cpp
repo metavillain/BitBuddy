@@ -135,7 +135,8 @@ void ChipEngine::prepare (double newSampleRate)
 
 void ChipEngine::setParams (const EngineParams& np)
 {
-    const bool modeChanged = paramsInitialised && (np.arpMode != p.arpMode || np.mono != p.mono);
+    const bool modeChanged = paramsInitialised
+                          && (np.arpMode != p.arpMode || np.mono != p.mono || np.console != p.console);
 
     p = np;
     p.arpChord   = std::clamp (p.arpChord, 0, kNumChords - 1);
@@ -378,6 +379,100 @@ void ChipEngine::allNotesOff (bool immediate)
     }
 }
 
+int ChipEngine::getNumActiveVoices() const noexcept
+{
+    int n = 0;
+    for (auto& v : voices)
+        n += v.active ? 1 : 0;
+    return n;
+}
+
+int ChipEngine::getVoiceLimit() const noexcept
+{
+    switch (p.console)
+    {
+        case Console::NES:     return 2;   // two pulse channels
+        case Console::GameBoy: return 2;   // two pulse channels
+        case Console::C64:     return 3;   // the SID's three voices
+        case Console::Modern:  break;
+    }
+    return maxVoices;
+}
+
+// Real chips set pitch with a whole-number "period" or "frequency" register,
+// so only certain frequencies exist. High notes on the NES come out a little
+// flat or sharp - part of its sound.
+float ChipEngine::chipFrequency (Console console, Wave wave, float hz) noexcept
+{
+    if (hz <= 0.0f)
+        return hz;
+
+    switch (console)
+    {
+        case Console::NES:
+        {
+            constexpr double cpu = 1789773.0;   // NTSC NES CPU clock
+            const double steps = wave == Wave::Triangle ? 32.0 : 16.0;   // triangle sequencer has 32 steps
+            const double t = std::clamp (std::round (cpu / (steps * hz) - 1.0), wave == Wave::Triangle ? 0.0 : 8.0, 2047.0);
+            return (float) (cpu / (steps * (t + 1.0)));
+        }
+        case Console::GameBoy:
+        {
+            // Pulse channels: 131072 / (2048 - x); the wave channel (drawings, triangle) runs half as fast
+            const double base = (wave == Wave::Custom || wave == Wave::Triangle) ? 65536.0 : 131072.0;
+            const double x = std::clamp (std::round (2048.0 - base / hz), 0.0, 2047.0);
+            return (float) (base / (2048.0 - x));
+        }
+        case Console::C64:
+        {
+            constexpr double clock = 985248.0, scale = 16777216.0;   // PAL C64, 24-bit phase accumulator
+            const double reg = std::clamp (std::round (hz * scale / clock), 1.0, 65535.0);
+            return (float) (reg * clock / scale);
+        }
+        case Console::Modern: break;
+    }
+    return hz;
+}
+
+// Noise pitch: the NES noise channel has only 16 speeds
+double ChipEngine::noiseClock (double wanted) const noexcept
+{
+    if (p.console != Console::NES)
+        return wanted;
+
+    static constexpr double periods[16] = { 4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068 };
+    double best = 1789773.0 / periods[0];
+    for (double period : periods)
+    {
+        const double clock = 1789773.0 / period;
+        if (std::abs (std::log (clock / wanted)) < std::abs (std::log (best / wanted)))
+            best = clock;
+    }
+    return best;
+}
+
+// The volume a real chip can make: 16 steps on the NES and Game Boy (4-bit
+// volume), 256 on the C64. The NES triangle has no volume at all: on or off.
+float ChipEngine::chipLevel (Voice& v) noexcept
+{
+    const float level = v.env * v.velocity;
+    switch (p.console)
+    {
+        case Console::NES:
+            if (p.wave == Wave::Triangle)
+            {
+                const float target = (v.stage == Stage::Release || v.stage == Stage::Idle) ? 0.0f : 1.0f;
+                v.gate += (target - v.gate) * 0.02f;   // ~1 ms: on / off without a click
+                return v.gate;
+            }
+            return std::round (level * 15.0f) / 15.0f;
+        case Console::GameBoy: return std::round (level * 15.0f) / 15.0f;
+        case Console::C64:     return std::round (level * 255.0f) / 255.0f;
+        case Console::Modern:  break;
+    }
+    return level;
+}
+
 bool ChipEngine::isIdle() const noexcept
 {
     if (heldArpRunning)
@@ -522,29 +617,33 @@ int ChipEngine::nextIndex (int idx, int& dir, int len, ArpPattern pattern, std::
 //==============================================================================
 ChipEngine::Voice& ChipEngine::allocateVoice (int note, bool drum)
 {
+    // Console modes only have a few channels for notes (drums keep the whole kit)
+    const auto first = voices.begin();
+    const auto last = drum ? voices.end() : voices.begin() + getVoiceLimit();
+
     // 1. The same note (or same drum) is still sounding -> retrigger that voice
-    for (auto& v : voices)
-        if (v.active && v.isDrum == drum && (drum ? v.drumType == note % 12 : v.note == note))
-            return v;
+    for (auto it = first; it != last; ++it)
+        if (it->active && it->isDrum == drum && (drum ? it->drumType == note % 12 : it->note == note))
+            return *it;
 
     // 2. A free voice
-    for (auto& v : voices)
-        if (! v.active)
-            return v;
+    for (auto it = first; it != last; ++it)
+        if (! it->active)
+            return *it;
 
     // 3. Steal the oldest voice whose key is already released...
     Voice* best = nullptr;
-    for (auto& v : voices)
-        if (! v.held && (best == nullptr || v.age < best->age))
-            best = &v;
+    for (auto it = first; it != last; ++it)
+        if (! it->held && (best == nullptr || it->age < best->age))
+            best = &*it;
 
     if (best != nullptr)
         return *best;
 
     // 4. ...or simply the oldest voice
-    for (auto& v : voices)
-        if (best == nullptr || v.age < best->age)
-            best = &v;
+    for (auto it = first; it != last; ++it)
+        if (best == nullptr || it->age < best->age)
+            best = &*it;
 
     return *best;
 }
@@ -572,6 +671,7 @@ void ChipEngine::startVoice (Voice& v, int note, float velocity)
     {
         v.phase = 0.0;
         v.env = 0.0f;
+        v.gate = 0.0f;
         v.lfsr = 1;
         v.noiseClockPhase = 0.0;
     }
@@ -757,14 +857,14 @@ float ChipEngine::renderTone (Voice& v) noexcept
     if (note != v.cachedNote)
     {
         v.cachedNote = note;
-        v.hz = noteToHz (note);
+        v.hz = chipFrequency (p.console, p.wave, noteToHz (note));
         v.inc = std::min (v.hz * (float) invSr, 0.45f);
     }
 
     const float s = oscillate (v);
     v.t += invSr;
 
-    return s * v.env * v.velocity * kVoiceGain;
+    return s * chipLevel (v) * kVoiceGain;
 }
 
 void ChipEngine::updateModulation (Voice& v) noexcept
@@ -847,10 +947,10 @@ float ChipEngine::oscillate (Voice& v) noexcept
         }
 
         // Noise pitch follows the key: clock = note frequency x 32
-        case Wave::Noise: out = noiseStep (v, hz * 32.0, false); break;
+        case Wave::Noise: out = noiseStep (v, noiseClock (hz * 32.0), false); break;
 
         // Short-mode LFSR repeats every 93 steps -> clock at 93 x frequency = in tune
-        case Wave::Metal: out = noiseStep (v, hz * 93.0, true); break;
+        case Wave::Metal: out = noiseStep (v, noiseClock (hz * 93.0), true); break;
 
         // Your own drawing, played back step by step like the Game Boy (no smoothing: that's the charm)
         case Wave::Custom:
