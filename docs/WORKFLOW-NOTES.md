@@ -1,8 +1,7 @@
-# BitBuddy – Workflow Notes (living log)
+# BitBuddy – Workflow Notes
 
-A running log of how this plugin was built: what worked, what slowed things
-down, the exact test criteria, and what to do differently next time.
-Written so the *next* audio-plugin project can start faster.
+How this plugin was built: what worked, what slowed things down, the exact test
+criteria, and a reusable checklist so the *next* audio-plugin project starts faster.
 
 ---
 
@@ -12,74 +11,108 @@ Written so the *next* audio-plugin project can start faster.
 |---|------|--------|-----------|
 | 1 | Toolchain check (`Get-Command`, `vswhere`) | git + winget present; no compiler, no CMake, no Python | – |
 | 2 | `winget install Kitware.CMake`, `Ninja-build.Ninja` | OK, ~1 min, no admin needed | – |
-| 3 | `winget install Microsoft.VisualStudio.2022.BuildTools` (VCTools workload) | **1st attempt failed: exit 1602** = Windows admin (UAC) prompt cancelled or timed out | **Yes** – needed a round-trip with the user |
-| 4 | Retry with the user watching for the UAC prompt | OK (MSVC 14.44, Win SDK 10.0.22621 + 10.0.26100) | ~10 min download |
-| 5 | Pick JUCE version via `git ls-remote --tags` | JUCE 9.0.6 exists; chose **8.0.15** (last of the 8.x line, most battle-tested) | – |
-| 6 | Shallow clone JUCE into `external/JUCE` | OK (~4,400 files) | – |
-| 7 | Grep JUCE headers for APIs before writing code | Found JUCE 8.0.15 API moves (see §4) | Saved compile-fix loops |
+| 3 | `winget install Microsoft.VisualStudio.2022.BuildTools` (VCTools workload) | **1st attempt failed: exit 1602** = Windows admin (UAC) prompt cancelled / timed out | **Yes**: needed a round-trip with the user |
+| 4 | Retry with the user watching for UAC | OK (MSVC 14.44, Win SDK 10.0.22621 + 10.0.26100) | ~10 min download, overlapped with design |
+| 5 | Pick JUCE version via `git ls-remote --tags` | JUCE 9.0.6 exists; chose **8.0.15** (last 8.x, most battle-tested) | – |
+| 6 | Shallow-clone JUCE into `external/JUCE` | OK | – |
+| 7 | Grep JUCE headers for APIs before writing code | Found 8.0.15 API moves (§4) | Saved compile-fix loops |
+| 8 | Write all code (engine, params, presets, processor, UI, test host) | ~2,900 lines | – |
+| 9 | First full build | **Compiled first try**, 278 s, 1 warning | – |
+| 10 | Own test host: 3 runs | 35/43 → 42/44 → **44/44** (§6) | ~15 min of diagnosis |
+| 11 | pluginval strictness 10 | **SUCCESS** first try (16 s) | – |
+| 12 | UI snapshots → visual review | 1 fix (drum help text overflowed) | – |
+| 13 | Demo song + MIDI render | OK | – |
+| 14 | Install plugin + REAPER / Audacity / Cakewalk | system-folder copy UAC **cancelled** (overlapping prompts); per-user copy OK; all 3 apps installed | Yes (UAC again) |
+| 15 | Mutation testing (3 planted bugs) | **3/3 caught** | – |
+| 16 | GitHub: private repo, JUCE as submodule | pushed | – |
 
 ---
 
 ## 2. Prework / scope questions to ask *before* starting
 
-These would have removed guesswork or round-trips:
+These would have removed guesswork or round-trips. Ask them in **one** message, up front:
 
 1. **Which DAW(s) do you use?** Drives the plugin formats:
-   VST3 (most DAWs on Windows/Mac), AU (Logic/GarageBand, **macOS only, needs a Mac to build**),
-   CLAP (Bitwig, Reaper, FL Studio 2024+), VST2 (LMMS – SDK no longer distributable).
+   VST3 (almost everything), AU (Logic/GarageBand, **macOS only, needs a Mac to build**),
+   CLAP (Bitwig, REAPER, FL Studio 2024+), VST2 (LMMS; the SDK is no longer distributable).
 2. **Windows only, or Mac too?** A Mac build needs a Mac (or CI with macOS runners).
-3. **Personal use or will you share/sell it?** JUCE is AGPLv3 or commercial
-   (free "Starter" tier under a revenue cap). Affects the license file and the company/plugin codes.
+3. **Personal use, share, or sell?** JUCE is AGPLv3 or commercial (free Starter tier under a
+   revenue cap). Decides license file, public/private repo, company/plugin codes.
 4. **Authentic vs. easy?** Strict NES limits (mono, 4 channels) vs. a friendly polyphonic synth.
-5. **Do you have a MIDI keyboard?** If not, prioritize the on-screen and computer-keyboard input.
-6. **Will you be at the PC during installs?** Admin prompts (UAC) time out. Tell the
-   user up front to watch for "Do you want to allow this app to make changes?".
-7. **Disk space OK for ~8 GB of tools?** (VS Build Tools ~6 GB + JUCE + build output).
-8. **Name / branding preferences?** (The plugin name shows up in every DAW's plugin list.)
+5. **MIDI keyboard?** If not, prioritise on-screen + computer-keyboard input.
+6. **Will you be at the PC for admin prompts?** UAC prompts time out (MSI exit 1602).
+7. **Disk space for ~8 GB of tools?**
+8. **Name / branding?** Shows in every DAW plugin list.
+9. **Where should it live?** (GitHub: public/private, account) Asked at the end here; better up front.
+10. **Which free DAW to install for testing?** (Here: REAPER + Cakewalk + Audacity.)
 
 ---
 
 ## 3. Efficiency ideas (expedite completion)
 
-- **Kick off the biggest install first, in the background**, then design and write code while it downloads.
-  (Done here; the compiler took ~10 min, which overlapped with design work.)
-- **Warn about UAC before launching admin installers**, so the 1602 retry never happens.
-- **Check the API in the cloned framework's headers** (grep) instead of relying on memory.
-  Frameworks move APIs between versions (see §4).
-- **Python isn't guaranteed on Windows.** PowerShell can do quick numeric simulations
-  (used for the LFSR period check).
-- Use the **Visual Studio CMake generator** (`-G "Visual Studio 17 2022"`) to avoid needing
-  a "Developer Command Prompt" environment. Ninja + MSVC needs `vcvars64.bat`.
-- **Build a headless test host early.** It loads the *real* VST3 binary, renders audio
-  offline and measures it. That makes tests runnable without anyone listening, and without GUI automation.
-- **Render the editor to a PNG** from the test host so the UI can be reviewed without
-  screen-control tools.
+**Do in parallel**
+- Kick off the biggest install (VS Build Tools, ~6 GB) *first*, in the background, then design
+  and write code while it downloads.
+- Write code while JUCE compiles. The first build is ~5 min; later builds ~20 s.
+
+**Avoid round-trips**
+- **Never fire two admin prompts at once.** Sequence them and announce each one. Both UAC failures
+  here were "cancelled": once timed out, once overlapping with installer prompts.
+- Batch all scope questions (§2) into one message at the start.
+- Check the API in the cloned framework's headers (grep) instead of relying on memory.
+
+**Tooling defaults that just work on Windows**
+- `cmake -G "Visual Studio 17 2022" -A x64` needs no "Developer Prompt" (Ninja + MSVC needs `vcvars64.bat`).
+- Static MSVC runtime (`CMAKE_MSVC_RUNTIME_LIBRARY`): the plugin works on PCs without the VC++ redist.
+- Python isn't guaranteed on Windows; PowerShell can do quick numeric checks.
+- PowerShell + `gh --jq` with `\(...)` interpolation breaks quoting. Use `ConvertFrom-Json` instead.
+- `winget` installs refresh PATH only for new shells. Re-read PATH from the registry in the same session.
+
+**Verification without ears or eyes**
+- **Headless test host that loads the real VST3** (JUCE `AudioPluginFormatManager`): renders offline,
+  measures pitch/levels/silence. That's the closest thing to a DAW that can run unattended.
+- **Render the editor to PNG** (`createComponentSnapshot`) for UI review without screen control.
+- **Render a demo song** from MIDI parts: an end-to-end smoke test plus a deliverable.
+- **Mutation-test the suite** (plant 2–3 bugs, confirm they're caught) before trusting "all green".
+
+**Debugging heuristics that paid off here**
+- Many failures with the same constant offset = one leaked state, not many bugs.
+- Validate the measuring instrument (pitch detector) before "fixing" the product.
+- Simulate the host's real timing (continuous audio blocks between UI actions).
 
 ---
 
 ## 4. Gotchas found
 
-- **JUCE 8.0.15**: plugin hosting lives in the new `juce_audio_processors_headless` module;
-  `AudioPluginFormatManager::addDefaultFormats()` → replaced by free function
-  `juce::addDefaultFormatsToManager(manager)`. Also `JUCE_PLUGINHOST_VST3` defaults to 0 (set it to 1 for the test host).
+- **JUCE 8.0.15**: plugin hosting moved to the new `juce_audio_processors_headless` module;
+  `AudioPluginFormatManager::addDefaultFormats()` → free function `juce::addDefaultFormatsToManager(fm)`.
+  `JUCE_PLUGINHOST_VST3` defaults to 0 (set to 1 for a test host).
+- JUCE 8 writer API: `createWriterFor (std::unique_ptr<OutputStream>&, AudioFormatWriterOptions)`.
 - `FontOptions (const Typeface::Ptr&)` exists in JUCE 8. Use it for embedded fonts.
-- MSI exit code **1602** = user cancelled (usually an unanswered UAC prompt).
-- NES noise LFSR: long mode period 32767, short ("metal") mode period **93** from seed 1.
-  So clocking the short mode at 93 × note frequency plays exactly in tune.
+- A `COMPANY_NAME` with spaces → set `BUNDLE_ID` explicitly (CMake warning otherwise).
+- VST3 hosts ignore a program change to the already-active program.
+- While the transport is "playing", JUCE's VST3 wrapper applies controller-side parameter changes
+  only via the next `process()` call (`vst3IsPlaying`).
+- A hosted JUCE VST3 shows ~2,080 extra hidden MIDI-CC parameters (needed for mod wheel / pitch bend).
+- NES noise LFSR: long mode period 32767, short ("metal") mode period **93** from seed 1, so clocking
+  the short mode at 93 × f plays exactly in tune.
+- MSI exit code **1602** = user cancelled (usually an unanswered or overlapping UAC prompt).
+- REAPER scans the per-user VST3 folder (`%LOCALAPPDATA%\Programs\Common\VST3`); Cakewalk does not.
+- LMMS hosts only VST2; Audacity hosts VST3 *effects* but not instruments.
 
 ---
 
 ## 5. Testing parameters (acceptance criteria)
 
-Three layers. All are automated and re-runnable (commands in README → Testing).
+Four layers. All automated and re-runnable (commands in README → Testing).
 
-**Layer 1: own test host** (`tools/TestHost.cpp --test`). Loads the *built VST3* through
+**Layer 1: own test host** (`tools/TestHost.cpp --test`): loads the *built VST3* through
 JUCE's VST3 hosting, exactly like a DAW, renders offline and measures the audio.
 
 | Area | Criterion |
 |---|---|
 | Identity | name = BitBuddy, accepts MIDI, stereo out, 24–26 automatable params, 21 programs |
-| Every preset (21) | output finite (no NaN/Inf), peak > −46 dB (makes sound), peak ≤ 0 dBFS, **tail < −60 dB** 8.5 s after note-off (no stuck notes / runaway echo) |
+| Every preset (21) | output finite (no NaN/Inf), peak > −46 dB (makes sound), peak ≤ 0 dBFS, **tail < −60 dB** 8.5 s in (no stuck notes / runaway echo) |
 | Tuning | YIN pitch detector, **±8 cents** for Square, Pulse 25/12.5, Triangle, Saw, Metal Noise |
 | Sample rates / blocks | A4 correct at 48 k/64, 96 k/1024, 22.05 k/**37** (odd block size on purpose) |
 | Controllers | pitch bend +2 st within ±10 cents; all-sound-off → < −60 dB |
@@ -89,16 +122,26 @@ JUCE's VST3 hosting, exactly like a DAW, renders offline and measures the audio.
 | Drum kit | all 12 drums sound (> −34 dB) and decay below −60 dB within 4.5 s |
 | Limiter | 8-note chord, vel 127, volume +6 dB → peak < 1.0 |
 | Project save/restore | tweak a preset, save, load another, restore → tweaks + program name survive |
-| CPU | 8-voice chords for 60 s → must be > 20× real time |
+| CPU | 8-voice chords for 60 s → must be > 20× real time (measured ~85–93×, ≈1.1% of a core) |
 
-**Layer 2: pluginval** (Tracktion, open source) at `--strictness-level 10`: 25 test groups
-(open cold/warm, programs, editor, editor-while-processing, audio processing at many rates
-and block sizes, state restoration, automation, parameter thread safety, bus layouts, fuzzing).
-The Steinberg `vst3 validator` group is skipped unless `--vst3validator <path>` is given
-(needs the full VST3 SDK; optional follow-up).
+**Layer 2: pluginval** (Tracktion, open source) at `--strictness-level 10`: 25 groups (open cold/warm,
+programs, editor, editor-while-processing, processing at many rates/blocks, state restoration,
+automation, parameter thread safety, buses, fuzzing). The Steinberg `vst3 validator` group is skipped
+unless `--vst3validator <path>` is given (needs the full VST3 SDK; optional follow-up).
 
-**Layer 3: visual review.** `--snapshot` renders the editor to PNG for 4 states
-(Hero Lead playing, Chord Arp, Drum Kit, Help overlay) so the layout can be checked without screen control.
+**Layer 3: visual review.** `--snapshot` renders 4 UI states (Hero Lead playing, Chord Arp, Drum Kit,
+Help overlay) to PNG.
+
+**Layer 4: mutation testing** (manual, ~2 min): plant a bug, rebuild, confirm the suite fails, `git checkout` to restore.
+
+| Mutant | Caught by |
+|---|---|
+| Metal-noise clock 93× → 92× (detuned) | Tuning: Metal Noise |
+| Pitch bend not reset on `prepare()` | CHORD arp, NOTES arp, MONO legato |
+| Major chord built as minor | CHORD arp |
+
+**Not automated (needs a human):** listening for taste and balance, real-DAW UI behaviour
+(focus, resizing in each host), MIDI-keyboard feel.
 
 ---
 
@@ -106,41 +149,70 @@ The Steinberg `vst3 validator` group is skipped unless `--vst3validator <path>` 
 
 | Run | Result | Notes |
 |---|---|---|
-| Build #1 | compiled first try (278 s full build, 1 warning) | design-first + API grep paid off |
-| Tests run 1 | 35 / 43 pass | see root causes below |
-| Tests run 2 | 42 / 44 pass | |
-| Tests run 3 | **44 / 44 pass** | |
-| pluginval L10 | **SUCCESS** (16 s) | vst3 validator group skipped (no SDK validator) |
-| Incremental rebuild | ~20 s | |
+| Build #1 | compiled first try (278 s, 1 warning) | design-first + API grep paid off |
+| Tests run 1 | 35 / 43 | see root causes below |
+| Tests run 2 | 42 / 44 | |
+| Tests run 3+ | **44 / 44** | `docs/test-results.txt` |
+| pluginval L10 | **SUCCESS** (16 s) | `docs/pluginval/` |
+| Mutation | **3 / 3 caught** | |
 
-Root causes of the run-1 failures (useful patterns for next time):
+Root causes of the run-1 failures:
 
 1. **Real bug: controller state leaked across playback restarts.** Pitch bend from one test shifted every
    later test by +2 st. Fix: reset pitch bend + mod wheel in `prepare()`.
-   *Lesson: a constant offset across many failures points to shared/leaked state, not many bugs.*
-2. **Test-instrument bug: naive autocorrelation pitch detection** had octave errors on the smooth
-   stepped triangle and the jittery metal noise. Fix: switched to YIN. *Lesson: validate the
-   measuring tool before trusting a "synth bug".*
-3. **Test-method bug: re-selecting the active program is a no-op** in VST3 hosts, so a test inherited
-   the previous test's wave. Fix: the helper switches away first.
-4. **Test-method bug: knob changes while "playing" are delivered with the next audio block** (JUCE
-   `vst3IsPlaying`), so saving state with no block in between captured stale values. Fix: "pump"
-   audio between steps like a real DAW does. *Lesson: simulate the host's real timing.*
+2. **Test-instrument bug: naive autocorrelation pitch detection** had octave errors on the smooth stepped
+   triangle and the jittery metal noise. Fix: YIN.
+3. **Test-method bug: re-selecting the active program is a no-op** in VST3 hosts. Fix: switch away first.
+4. **Test-method bug: knob changes while "playing" are applied with the next audio block**, so saving
+   with no block in between captured stale values. Fix: "pump" audio between steps like a DAW.
 5. **Real improvement: big chords hit 0 dBFS.** Added a soft limiter (transparent below −2 dB, ceiling −0.18 dBFS).
-6. Defensive: ignore a host program change to the already-active program (JUCE's wrapper already
-   does this, but some hosts resend the program number on project load).
-7. The hosted VST3 shows **2,106 params**: 26 real + 2,080 hidden, non-automatable MIDI-CC slots that
-   JUCE adds so VST3 can receive mod wheel / pitch bend. Count `isAutomatable()` params in tests.
+6. Defensive: ignore a host program change to the already-active program (JUCE's wrapper already does,
+   but some hosts resend the program number on project load).
 
 ---
 
-## 7. Install / distribution log
+## 7. Reusable checklist: next audio-plugin project
 
-| Step | Result |
-|---|---|
-| Copy to `C:\Program Files\Common Files\VST3` (elevated) | **UAC prompt cancelled**, probably overlapping with installer prompts. → wrote `install-plugin.ps1` for later |
-| Copy to per-user `%LOCALAPPDATA%\Programs\Common\VST3` | OK, no admin. Part of the VST3 spec, but not every DAW scans it by default |
-| winget: REAPER, Audacity, Cakewalk | see §1 |
-| GitHub | private repo; JUCE as a submodule (keeps the repo small); commit identity = GitHub noreply address |
+**Phase 0: prework (5 min, user present)**
+- [ ] Ask the §2 questions in one message (formats/DAWs, OS, license/visibility, authenticity, input device, name, repo).
+- [ ] Tell the user how many admin prompts to expect and when.
 
-*Lesson: never fire two admin prompts at once. Sequence them and tell the user before each one.*
+**Phase 1: toolchain (background)**
+- [ ] `Get-Command git,cmake,cl,gh,python` + `vswhere -all`.
+- [ ] Start the VS Build Tools install in the background (VCTools + Win11 SDK). CMake/Ninja via winget.
+- [ ] Clone the framework (pin a tag) and grep it for APIs you'll use.
+
+**Phase 2: design + code (while installing)**
+- [ ] Engine as plain C++ (no framework types), so it's testable.
+- [ ] Parameters with readable text, sensible skews, versioned IDs.
+- [ ] Presets that each demonstrate one feature.
+- [ ] UI: numbered workflow sections, hover-help bar, live visual feedback.
+- [ ] Test host target in the same CMake project, from day one.
+
+**Phase 3: build + verify**
+- [ ] Full build → fix warnings.
+- [ ] Own test host (`--test`) → triage failures: product bug vs. instrument bug vs. method bug.
+- [ ] pluginval `--strictness-level 10`.
+- [ ] UI snapshots → review.
+- [ ] Mutation-test 2–3 planted bugs.
+- [ ] Demo render (audio + MIDI parts).
+
+**Phase 4: deliver**
+- [ ] Install: per-user VST3 folder (no admin) + system folder (one admin prompt, alone).
+- [ ] Install the DAW(s) the user chose; note which folders each scans.
+- [ ] README + beginner guide + workflow notes; scan for personal info; `.gitignore` build output.
+- [ ] Git: framework as a submodule, noreply commit identity, private repo unless told otherwise.
+
+**Rough timings this run:** tools ~15 min (mostly download) · code ~1 h · first build 5 min ·
+test/fix loop ~15 min · pluginval 16 s · docs + install + GitHub ~15 min.
+
+---
+
+## 8. Possible next steps
+
+- Run `install-plugin.ps1` (one admin prompt) so Cakewalk / other DAWs see BitBuddy.
+- Steinberg VST3 validator (build from the full VST3 SDK, pass to pluginval `--vst3validator`).
+- CLAP build via `clap-juce-extensions` (native in Bitwig/REAPER/FL Studio).
+- GitHub Actions CI: build + `--test` + pluginval on every push; a macOS runner for an AU build.
+- GitHub Release with a zipped `BitBuddy.vst3` + standalone `.exe`.
+- User presets (save your own sounds) and a per-step "tracker" arpeggio editor.
