@@ -1,0 +1,58 @@
+﻿
+=== BitBuddy automated tests ===
+plugin: C:\Claude\BitBuddy\build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
+
+  PASS  Plugin name                                 BitBuddy
+  PASS  Accepts MIDI (instrument)                   yes
+  PASS  Stereo output                               2 ch
+  PASS  Automatable parameters in the DAW           26 (+2080 hidden MIDI-CC slots)
+  PASS  Factory presets exposed to the DAW          21
+
+  -- every preset: sound / no NaN / no clipping / no stuck notes --
+  PASS  Preset 00 Classic Square                    peak -14.5 dB, tail -120.0 dB
+  PASS  Preset 01 Hero Lead                         peak -11.1 dB, tail -120.0 dB
+  PASS  Preset 02 Thin Lead                         peak -9.7 dB, tail -120.0 dB
+  PASS  Preset 03 Triangle Bass                     peak -14.3 dB, tail -120.0 dB
+  PASS  Preset 04 Punchy Bass                       peak -13.5 dB, tail -120.0 dB
+  PASS  Preset 05 Major Chord Arp                   peak -11.1 dB, tail -120.0 dB
+  PASS  Preset 06 Minor Chord Arp                   peak -14.5 dB, tail -120.0 dB
+  PASS  Preset 07 Power Arp                         peak -9.7 dB, tail -120.0 dB
+  PASS  Preset 08 Note Arpeggiator                  peak -7.5 dB, tail -120.0 dB
+  PASS  Preset 09 PWM Strings                       peak -2.3 dB, tail -120.0 dB
+  PASS  Preset 10 Spooky Triangle                   peak -12.7 dB, tail -120.0 dB
+  PASS  Preset 11 Metal Bells                       peak -11.5 dB, tail -120.0 dB
+  PASS  Preset 12 Lo-Fi Saw Buzz                    peak -15.0 dB, tail -120.0 dB
+  PASS  Preset 13 Drum Kit                          peak -10.3 dB, tail -120.0 dB
+  PASS  Preset 14 Crunchy Drums                     peak -10.2 dB, tail -120.0 dB
+  PASS  Preset 15 Coin Pickup                       peak -14.0 dB, tail -120.0 dB
+  PASS  Preset 16 Jump                              peak -14.1 dB, tail -120.0 dB
+  PASS  Preset 17 Laser Zap                         peak -11.1 dB, tail -120.0 dB
+  PASS  Preset 18 Power Up                          peak -14.4 dB, tail -120.0 dB
+  PASS  Preset 19 Explosion                         peak -12.3 dB, tail -120.0 dB
+  PASS  Preset 20 Wind & Waves                      peak -14.3 dB, tail -120.0 dB
+
+  -- tuning (autocorrelation pitch, tolerance +/- 8 cents) --
+  PASS  Tuning: Square note 69                      440.16 Hz (expected 440.00, 0.61 cents)
+  PASS  Tuning: Pulse 25% note 57                   220.02 Hz (expected 220.00, 0.13 cents)
+  PASS  Tuning: Pulse 12.5% note 72                 523.49 Hz (expected 523.25, 0.77 cents)
+  PASS  Tuning: Triangle note 45                    109.99 Hz (expected 110.00, -0.17 cents)
+  PASS  Tuning: Saw note 64                         329.56 Hz (expected 329.63, -0.36 cents)
+  PASS  Tuning: Metal Noise note 69                 440.53 Hz (expected 440.00, 2.09 cents)
+  PASS  A4 at 48.00 kHz, block 64                   440.08 Hz
+  PASS  A4 at 96.00 kHz, block 1024                 440.25 Hz
+  PASS  A4 at 22.05 kHz, block 37                   440.24 Hz
+  PASS  Pitch bend up 2 semitones                   494.09 Hz (expected 493.88)
+
+  -- arpeggiators --
+  PASS  CHORD arp: one key -> C E G C E G           semitones: -0.0 4.0 7.0 -0.0 4.0 7.0 
+  PASS  NOTES arp: C E G held, up & down, 2 octaves notes: 60 64 67 72 76 79 76 72 67 64 
+  PASS  MONO legato: A2 then E3                     110.0 Hz -> 164.8 Hz
+
+  -- drum kit --
+  PASS  All 12 drums sound and decay to silence     12/12 ok
+  PASS  All-sound-off silences held notes           -120.0 dB after
+  PASS  8-note chord at max volume stays below 0 dBFSpeak 0.9800
+  PASS  Tweaked preset survives save + reload       1576 bytes; wave 0.429/0.429 attack 0.420/0.420 echo 0.330/0.330, program Hero Lead
+  PASS  CPU: 8-voice chords for 60 s                63.0024x faster than real time (1.59% of one core)
+
+  44 passed, 0 failed

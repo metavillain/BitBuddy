@@ -1,0 +1,14 @@
+# Build output
+build/
+out/
+*.log
+
+# IDE / OS clutter
+.vs/
+.vscode/
+*.user
+Thumbs.db
+.DS_Store
+
+# Local Claude settings
+.claude/settings.local.json
