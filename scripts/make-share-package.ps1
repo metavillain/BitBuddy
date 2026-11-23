@@ -77,7 +77,7 @@ pause
 BitBuddy $version - an easy, fun chiptune / 8-bit synth
 =======================================================
 
-Needs: Windows 10 or 11 (64-bit). Sorry - no Mac version yet.
+Needs: Windows 10 or 11 (64-bit). Mac user? Get the macOS zip from the same download page.
 
 TIP BEFORE YOU START: right-click the .zip > Properties > tick "Unblock" > OK,
 then extract it. That avoids most Windows security pop-ups.
@@ -121,9 +121,10 @@ What's in this folder
   LICENSES.txt            licenses
 "@ | Set-Content -Encoding utf8 "$pkg\READ ME FIRST.txt"
 
+Copy-Item "$root\LICENSE" "$pkg\LICENSE.txt"
 @"
-BitBuddy $version
-Built with JUCE (https://juce.com), used under the GNU AGPLv3. BitBuddy's complete
+BitBuddy $version is free software: GNU Affero General Public License v3 (see LICENSE.txt).
+Built with JUCE (https://juce.com), used under the AGPLv3. BitBuddy's complete
 source code is included in the Source folder.
 
 Pixel font: "Press Start 2P" by CodeMan38, SIL Open Font License 1.1:

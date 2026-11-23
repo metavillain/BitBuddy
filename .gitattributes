@@ -1,9 +1,11 @@
 # Consistent line endings in the repo; Windows checkouts get CRLF as needed
 * text=auto
 
-# Windows scripts must keep CRLF
+# Windows scripts must keep CRLF, Mac/Linux scripts LF
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+*.sh text eol=lf
+*.command text eol=lf
 
 # Binary assets
 *.png binary

@@ -14,7 +14,9 @@
 #include "../src/PluginEditor.h"
 
 #include <chrono>
+#include <functional>
 #include <iostream>
+#include <typeinfo>
 
 using namespace juce;
 

@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
 
+# macOS: one "universal" build for Apple Silicon + Intel Macs (ignored elsewhere)
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Oldest supported macOS")
+
 project(BitBuddy VERSION 1.0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -31,14 +35,19 @@ set(BITBUDDY_JUCE_OPTIONS
     JUCE_USE_WINDOWS_MEDIA_FORMAT=0)
 
 # ---------------------------------------------------------------------------
-# The plugin: VST3 (for DAWs) + Standalone (runs on its own)
+# The plugin: VST3 (most DAWs) + Standalone app, plus AU on Mac (Logic, GarageBand)
 # ---------------------------------------------------------------------------
+set(BITBUDDY_FORMATS VST3 Standalone)
+if(APPLE)
+    list(APPEND BITBUDDY_FORMATS AU)
+endif()
+
 juce_add_plugin(BitBuddy
     COMPANY_NAME "BitBuddy Labs"
     BUNDLE_ID com.bitbuddylabs.bitbuddy
     PLUGIN_MANUFACTURER_CODE Bbdl
     PLUGIN_CODE Bbd1
-    FORMATS VST3 Standalone
+    FORMATS ${BITBUDDY_FORMATS}
     PRODUCT_NAME "BitBuddy"
     DESCRIPTION "Easy chiptune / 8-bit synth"
     IS_SYNTH TRUE
@@ -70,6 +79,7 @@ juce_add_console_app(BitBuddyTestHost PRODUCT_NAME "BitBuddyTestHost")
 target_sources(BitBuddyTestHost PRIVATE tests/TestHost.cpp ${BITBUDDY_SOURCES})
 target_compile_definitions(BitBuddyTestHost PRIVATE ${BITBUDDY_JUCE_OPTIONS}
     JUCE_PLUGINHOST_VST3=1
+    $<$<BOOL:${APPLE}>:JUCE_PLUGINHOST_AU=1>
     JUCE_MODAL_LOOPS_PERMITTED=1)
 
 target_link_libraries(BitBuddyTestHost

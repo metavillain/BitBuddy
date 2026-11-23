@@ -72,6 +72,7 @@ the admin prompt). That copies BitBuddy into the standard folder every DAW scans
 
 | DAW | How to add BitBuddy |
 |---|---|
+| **GarageBand / Logic Pro** (Mac) | New *Software Instrument* track → click the instrument slot → *AU Instruments → BitBuddy Labs → BitBuddy*. |
 | **REAPER** | *Track → Insert virtual instrument on new track* → type `BitBuddy` → OK. If it's missing: *Options → Preferences → Plug-ins → VST → Re-scan*. |
 | **Cakewalk** | *Insert → Soft Synth → BitBuddy* (or drag it from the *Browser → Plug-ins → Instruments* tab). If it's missing: *Edit → Preferences → File → VST Settings → Scan*. |
 | **FL Studio** | *Plugin database → Installed → Generators → VST3 → BitBuddy* (or *Options → Manage plugins → Find plugins*). |

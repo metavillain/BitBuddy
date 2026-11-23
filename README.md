@@ -1,10 +1,17 @@
-# BitBuddy – an easy, fun chiptune synth (VST3 + Standalone)
+# BitBuddy – an easy, fun chiptune synth (Windows + Mac)
+
+[![Build](https://github.com/metavillain/BitBuddy/actions/workflows/build.yml/badge.svg)](https://github.com/metavillain/BitBuddy/actions/workflows/build.yml)
 
 BitBuddy recreates the sound chips of classic game consoles (NES, Game Boy,
 C64) and builds their famous tricks into simple knobs, so making 8-bit music
 is quick and fun even if you've never made music before.
 
 ![BitBuddy](docs/screenshot.png)
+
+## ⬇️ Download
+
+**[Get the latest version](https://github.com/metavillain/BitBuddy/releases/latest)**: pick the
+**Windows** or **macOS** zip, unzip it, and open *READ ME FIRST.txt*. No other software needed.
 
 **New to all this?** Start with the **[Beginner's Guide](docs/BEGINNERS-GUIDE.md)**.
 
@@ -25,27 +32,32 @@ is quick and fun even if you've never made music before.
 - Mod wheel → vibrato, pitch bend (±2 semitones), sustain pedal
 - Resizable window; very light on CPU (under 1% of one core for 8-voice chords, ~0.03% when idle)
 
-## Install (Windows)
+## Install
 
-1. Build it (below), or use the files in `build\BitBuddy_artefacts\Release\`.
-2. Right-click **`scripts\install-plugin.ps1`** → *Run with PowerShell* → click **Yes**.
-   It copies `BitBuddy.vst3` into `C:\Program Files\Common Files\VST3`, where every DAW looks.
-3. In your DAW, re-scan plugins and add **BitBuddy** as an instrument.
+**From a download (easiest):** see *READ ME FIRST.txt* in the zip.
 
-Or just run the standalone app: `build\BitBuddy_artefacts\Release\Standalone\BitBuddy.exe`.
+- **Windows:** `BitBuddy.exe` plays on its own; `Install BitBuddy.bat` puts the VST3 plugin where every DAW looks.
+- **Mac:** `Install BitBuddy.command` installs the app plus the **Audio Unit** (GarageBand, Logic) and **VST3**
+  plugins. macOS will warn that the developer can't be verified: allow it under
+  *System Settings → Privacy & Security → Open Anyway*.
 
-**Works in:** REAPER, Cakewalk, FL Studio, Ableton Live, Bitwig, Studio One, Cubase and
-any other DAW that supports VST3 instruments. *(Logic/GarageBand need an AU build on a Mac.)*
+**From your own Windows build:** right-click **`scripts\install-plugin.ps1`** → *Run with PowerShell* → **Yes**.
 
-## Share it with a friend
+**Works in:** GarageBand, Logic Pro, REAPER, Cakewalk, FL Studio, Ableton Live, Bitwig, Studio One, Cubase
+and any other DAW that supports VST3 or Audio Unit instruments.
+
+## Releases (how the downloads are made)
+
+Every push to `main` builds and tests Windows and macOS on GitHub Actions
+([workflow](.github/workflows/build.yml)). Pushing a version tag publishes a Release page with both zips:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\make-share-package.ps1
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
-This creates `dist\BitBuddy-<version>-Windows.zip`, a self-contained package with the standalone app,
-the VST3, a double-click installer (`Install BitBuddy.bat`), a plain-text *READ ME FIRST*,
-the beginner's guide, the demo song, licenses and the source code. Your friend needs Windows 10/11 (64-bit).
+The zips are made by `scripts/make-share-package.ps1` (Windows) and `scripts/make-share-package-mac.sh` (Mac):
+app + plugins + a double-click installer + *READ ME FIRST* + beginner's guide + demo + licenses + source.
 
 ## Demo
 
@@ -103,10 +115,10 @@ docs/               beginner's guide, workflow notes, test reports, screenshot
 external/JUCE       JUCE 8.0.15 (git submodule)
 ```
 
-## Licensing notes
+## License
 
-- Built with [JUCE](https://juce.com) 8, which is dual-licensed under **AGPLv3** or a commercial
-  JUCE license (free "Starter" tier for small personal projects). If you share or sell BitBuddy
-  publicly, release its source under AGPLv3 or get a JUCE license.
+- **BitBuddy is free software under the [GNU AGPLv3](LICENSE).** You can use, study, share and change it;
+  if you distribute a modified version, share its source under the same license.
+- Built with [JUCE](https://juce.com) 8, used under its AGPLv3 option.
 - Pixel font: **Press Start 2P** by CodeMan38, SIL Open Font License 1.1 (see `assets/PressStart2P-OFL.txt`).
-- VST is a trademark of Steinberg Media Technologies GmbH.
+- VST is a trademark of Steinberg Media Technologies GmbH. Audio Units, Logic Pro and GarageBand are trademarks of Apple Inc.
