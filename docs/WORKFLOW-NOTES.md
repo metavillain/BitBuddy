@@ -25,6 +25,7 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 14 | Install plugin + REAPER / Audacity / Cakewalk | system-folder copy UAC **cancelled** (overlapping prompts); per-user copy OK; all 3 apps installed | Yes (UAC again) |
 | 15 | Mutation testing (3 planted bugs) | **3/3 caught** | – |
 | 16 | GitHub: private repo, JUCE as submodule | pushed | – |
+| 17 | `install-plugin.ps1` (single, announced UAC prompt) | system-wide install OK, verified by SHA-256 against the build | – |
 
 ---
 
@@ -210,7 +211,8 @@ test/fix loop ~15 min · pluginval 16 s · docs + install + GitHub ~15 min.
 
 ## 8. Possible next steps
 
-- Run `install-plugin.ps1` (one admin prompt) so Cakewalk / other DAWs see BitBuddy.
+- ~~Run `install-plugin.ps1`~~: done; the retry alone, announced, succeeded. Lesson confirmed.
+  The script now verifies the copy by hash (elevated processes don't report failure back).
 - Steinberg VST3 validator (build from the full VST3 SDK, pass to pluginval `--vst3validator`).
 - CLAP build via `clap-juce-extensions` (native in Bitwig/REAPER/FL Studio).
 - GitHub Actions CI: build + `--test` + pluginval on every push; a macOS runner for an AU build.

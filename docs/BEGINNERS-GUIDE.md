@@ -61,10 +61,10 @@ Run `install-plugin.ps1` (right-click → *Run with PowerShell*, click **Yes** o
 the admin prompt). That copies BitBuddy into the standard folder every DAW scans:
 `C:\Program Files\Common Files\VST3`.
 
-> Already done on this PC: BitBuddy is in your *personal* VST3 folder
-> (`%LOCALAPPDATA%\Programs\Common\VST3`). **REAPER** scans that folder by itself.
-> **Cakewalk** doesn't, so either run `install-plugin.ps1`, or add that folder under
-> *Edit → Preferences → File → VST Settings → Scan Paths* and click *Scan*.
+> Already done on this PC: BitBuddy is installed in both the system folder and your
+> *personal* VST3 folder (`%LOCALAPPDATA%\Programs\Common\VST3`), so REAPER, Cakewalk
+> and other DAWs will all find it. After you rebuild BitBuddy, run the script again to
+> update both copies.
 
 **Step 2: load it.**
 

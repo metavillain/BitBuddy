@@ -24,9 +24,16 @@ $sysDir = 'C:\Program Files\Common Files\VST3'
 $cmd = "New-Item -ItemType Directory -Force '$sysDir' | Out-Null; " +
        "if (Test-Path '$sysDir\BitBuddy.vst3') { Remove-Item -Recurse -Force '$sysDir\BitBuddy.vst3' }; " +
        "Copy-Item -Recurse -Force '$src' '$sysDir\'"
+$binary = 'Contents\x86_64-win\BitBuddy.vst3'
 try {
     Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile', '-Command', $cmd -Wait
-    Write-Host "Installed system-wide: $sysDir\BitBuddy.vst3"
+    $installed = Join-Path "$sysDir\BitBuddy.vst3" $binary
+    if ((Test-Path $installed) -and
+        (Get-FileHash $installed).Hash -eq (Get-FileHash (Join-Path $src $binary)).Hash) {
+        Write-Host "Installed system-wide: $sysDir\BitBuddy.vst3"
+    } else {
+        Write-Host "System-wide copy did not complete - try running this script again."
+    }
 } catch {
     Write-Host "System-wide install skipped (admin permission was not given)."
 }
