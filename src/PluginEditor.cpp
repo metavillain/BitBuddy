@@ -414,6 +414,81 @@ juce::String ChipKeyboard::getWhiteNoteText (int note)
     return juce::MidiKeyboardComponent::getWhiteNoteText (note);
 }
 
+void ChipKeyboard::setScale (int key, int newScaleIndex)
+{
+    if (key != scaleKey || newScaleIndex != scaleIndex)
+    {
+        scaleKey = key;
+        scaleIndex = newScaleIndex;
+        repaint();
+    }
+}
+
+juce::String ChipKeyboard::letterFor (int note) const
+{
+    static const juce::String keys ("AWSEDFTGYHUJKOLP;");   // JUCE's default computer-key layout
+    const int offset = note - baseOctave * 12;
+    return offset >= 0 && offset < keys.length() ? keys.substring (offset, offset + 1) : juce::String();
+}
+
+bool ChipKeyboard::isDimmed (int note) const
+{
+    return ! drumMode && ! inScale (note, scaleKey, (Scale) scaleIndex);
+}
+
+void ChipKeyboard::drawWhiteNote (int note, juce::Graphics& g, juce::Rectangle<float> area, bool isDown, bool isOver,
+                                  juce::Colour lineColour, juce::Colour textColour)
+{
+    juce::MidiKeyboardComponent::drawWhiteNote (note, g, area, isDown, isOver, lineColour, textColour);
+
+    if (isDimmed (note) && ! isDown)
+    {
+        g.setColour (pal::grey.withAlpha (0.55f));
+        g.fillRect (area.reduced (1.0f, 0.0f));
+    }
+
+    // The KEY's home note gets a pink marker while Scale Lock is on
+    if (! drumMode && scaleIndex != 0 && degreeOf (note, scaleKey) == 0)
+    {
+        g.setColour (pal::pink);
+        g.fillRect (area.getCentreX() - 4.0f, area.getY() + 4.0f, 8.0f, 8.0f);
+    }
+
+    if (const auto letter = letterFor (note); letter.isNotEmpty())
+    {
+        g.setColour (pal::navy);
+        g.setFont (pixelFont (7.0f));
+        g.drawText (letter, area.withTrimmedTop (area.getHeight() - 32.0f).withHeight (12.0f),
+                    juce::Justification::centred);
+    }
+}
+
+void ChipKeyboard::drawBlackNote (int note, juce::Graphics& g, juce::Rectangle<float> area, bool isDown, bool isOver,
+                                  juce::Colour noteFillColour)
+{
+    juce::MidiKeyboardComponent::drawBlackNote (note, g, area, isDown, isOver, noteFillColour);
+
+    if (isDimmed (note) && ! isDown)
+    {
+        g.setColour (pal::grey.withAlpha (0.7f));
+        g.fillRect (area.reduced (area.getWidth() * 0.3f, 0.0f).withTrimmedTop (area.getHeight() * 0.15f)
+                        .withHeight (2.0f));   // a thin grey dash = "snaps to a neighbour"
+    }
+
+    if (! drumMode && scaleIndex != 0 && degreeOf (note, scaleKey) == 0)
+    {
+        g.setColour (pal::pink);
+        g.fillRect (area.getCentreX() - 3.0f, area.getY() + 4.0f, 6.0f, 6.0f);
+    }
+
+    if (const auto letter = letterFor (note); letter.isNotEmpty())
+    {
+        g.setColour (pal::light);
+        g.setFont (pixelFont (6.0f));
+        g.drawText (letter, area.withTrimmedTop (area.getHeight() - 14.0f), juce::Justification::centred);
+    }
+}
+
 bool ChipKeyboard::keyPressed (const juce::KeyPress& key)
 {
     const auto c = juce::CharacterFunctions::toLowerCase (key.getTextCharacter());
@@ -421,6 +496,7 @@ bool ChipKeyboard::keyPressed (const juce::KeyPress& key)
     {
         baseOctave = juce::jlimit (1, 8, baseOctave + (c == 'x' ? 1 : -1));
         setKeyPressBaseOctave (baseOctave);
+        repaint();   // the letter labels move with the octave
         return true;
     }
     return juce::MidiKeyboardComponent::keyPressed (key);
@@ -442,7 +518,7 @@ HelpOverlay::HelpOverlay()
 
 void HelpOverlay::resized()
 {
-    panel = getLocalBounds().withSizeKeepingCentre (780, 520);
+    panel = getLocalBounds().withSizeKeepingCentre (780, 590);
     closeButton.setBounds (panel.getCentreX() - 70, panel.getBottom() - 50, 140, 34);
 }
 
@@ -471,6 +547,8 @@ void HelpOverlay::paint (juce::Graphics& g)
                              "notes super fast. Set CHORD and hold one key - instant chiptune chord!" },
         { "5. MOVE & CRUNCH", "Vibrato makes leads sing. Sweep makes lasers, jumps and drum hits. "
                               "Bits / Rate add grit, Echo adds space." },
+        { "PLAY ALONG", "Pick a KEY and SCALE LOCK (bottom right) and every key you press fits the song - no wrong "
+                        "notes. Set CHORD to SMART and each key plays the chord that belongs to it." },
         { "MAKING A SONG", "Use one BitBuddy per track in your DAW, just like the NES used separate channels: "
                            "Lead (Hero Lead), Chords (Chord Arp), Bass (Triangle Bass), Drums (Drum Kit)." },
     };
@@ -900,6 +978,7 @@ void MainPanel::updateScaleTip()
     if (stateNow == lastScaleState)
         return;
     lastScaleState = stateNow;
+    keyboard.setScale (key, scale);
 
     const auto name = keyNames()[key] + " " + scaleNames()[scale];
     juce::String text;

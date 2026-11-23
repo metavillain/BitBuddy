@@ -409,6 +409,97 @@ static int runTests (const String& path)
         res.check (ok, "NOTES arp: C E G held, up & down, 2 octaves", "notes: " + seq);
     }
 
+    // ---- 4b. Scale Lock + Smart Chords ----------------------------------------
+    std::cout << "\n  -- scale lock + smart chords --\n";
+    auto setScale = [&] (int key, int scale)
+    {
+        setParam (*plugin, "Key", (float) key / 11.0f);
+        setParam (*plugin, "Scale", (float) scale / 7.0f);
+    };
+    auto noteHeard = [&] (const AudioBuffer<float>& out, double atSec)
+    {
+        const double hz = pitchAt (out, atSec, 8192, sr, 40.0);
+        return hz > 0 ? 69.0 + 12.0 * std::log2 (hz / 440.0) : -1.0;
+    };
+    {
+        selectProgram (*plugin, "Classic Square");
+        setScale (0, 1);   // C major
+        String detail;
+        bool ok = true;
+        // C# -> C, F# -> F (ties go down), D# -> D, B stays B
+        for (auto [key, expected] : { std::pair { 61, 60 }, { 66, 65 }, { 63, 62 }, { 71, 71 } })
+        {
+            const double heard = noteHeard (renderNotes (*plugin, { { 0.0, 1.0, key, 0.8f } }, 1.2, sr), 0.3);
+            ok = ok && std::abs (heard - expected) < 0.2;
+            detail << key << "->" << String (heard, 1) << " ";
+        }
+        res.check (ok, "SCALE LOCK (C major): black keys snap to scale notes", detail);
+
+        // A minor pentatonic: A C D E G only
+        setScale (9, 4);
+        const double heardB = noteHeard (renderNotes (*plugin, { { 0.0, 1.0, 71, 0.8f } }, 1.2, sr), 0.3);  // B -> C (1 away; A is 2)
+        const double heardF = noteHeard (renderNotes (*plugin, { { 0.0, 1.0, 65, 0.8f } }, 1.2, sr), 0.3);  // F -> E
+        res.check (std::abs (heardB - 72) < 0.2 && std::abs (heardF - 64) < 0.2, "SCALE LOCK (A minor penta): B -> C, F -> E",
+                   String (heardB, 1) + ", " + String (heardF, 1));
+    }
+    {
+        // Two keys that snap to the same note: it must sound until BOTH are released
+        selectProgram (*plugin, "Classic Square");
+        setScale (0, 1);
+        auto out = renderEvents (*plugin, { { 0, MidiMessage::noteOn (1, 61, 0.8f) },              // C# -> C
+                                            { (int) (0.1 * sr), MidiMessage::noteOn (1, 60, 0.8f) },  // C
+                                            { (int) (0.5 * sr), MidiMessage::noteOff (1, 61) },
+                                            { (int) (1.0 * sr), MidiMessage::noteOff (1, 60) } }, 2.0, sr);
+        const float held = peakOf (out, 0.6, 0.95, sr);
+        const float tail = peakOf (out, 1.5, 2.0, sr);
+        res.check (held > 0.05f && tail < 1.0e-3f, "SCALE LOCK: shared note holds until both keys are up",
+                   "held " + String (Decibels::gainToDecibels (held), 1) + " dB, tail "
+                       + String (Decibels::gainToDecibels (tail, -120.0f), 1) + " dB");
+    }
+    {
+        // Changing the scale while a key is held must not leave a stuck note
+        selectProgram (*plugin, "Classic Square");
+        setScale (0, 1);
+        TestPlayHead ph;
+        ph.sampleRate = sr;
+        plugin->setPlayHead (&ph);
+        plugin->setNonRealtime (true);
+        plugin->prepareToPlay (sr, 512);
+        render (*plugin, { { 0, MidiMessage::noteOn (1, 61, 0.8f) } }, 0.5, sr, 512, ph);   // sounds C
+        setScale (0, 0);                                                                  // Scale Lock off
+        render (*plugin, {}, 0.05, sr, 512, ph);
+        auto out = render (*plugin, { { 0, MidiMessage::noteOff (1, 61) } }, 1.5, sr, 512, ph);
+        plugin->releaseResources();
+        plugin->setPlayHead (nullptr);
+        const float tail = peakOf (out, 1.0, 1.5, sr);
+        res.check (tail < 1.0e-3f, "SCALE LOCK: changing scale while holding a key -> no stuck note",
+                   "tail " + String (Decibels::gainToDecibels (tail, -120.0f), 1) + " dB");
+    }
+    {
+        // SMART chords in C major: D -> D minor (0 3 7), B -> B diminished (0 3 6), F -> F major (0 4 7)
+        String detail;
+        bool ok = true;
+        for (auto [key, third, fifth] : { std::tuple { 62, 3, 7 }, { 71, 3, 6 }, { 65, 4, 7 } })
+        {
+            selectProgram (*plugin, "Smart Chords");
+            setScale (0, 1);
+            setParam (*plugin, "Arp Speed", 5.0f / 7.0f);   // 15 Hz: 2940 samples per step
+            setParam (*plugin, "Echo", 0.0f);
+            auto out = renderNotes (*plugin, { { 0.0, 1.0, key, 0.8f } }, 1.0, sr);
+            const int expected[] = { 0, third, fifth };
+            for (int step = 0; step < 3; ++step)
+            {
+                const double hz = pitchAt (out, (step * 2940 + 400) / sr, 2048, sr, 100.0);
+                const double semis = 12.0 * std::log2 (hz / midiToHz (key));
+                ok = ok && std::abs (semis - expected[step]) < 0.3;
+                detail << String (semis, 1) << " ";
+            }
+            detail << "| ";
+        }
+        res.check (ok, "SMART chords (C major): Dm, Bdim, F", detail);
+    }
+    setScale (0, 0);   // leave Scale Lock off for the rest of the tests
+
     // ---- 5. Mono + legato glide -----------------------------------------------
     {
         selectProgram (*plugin, "Triangle Bass");
@@ -782,17 +873,21 @@ static int runSnapshot (const File& outDir)
     BitBuddyProcessor proc;
     proc.prepareToPlay (44100.0, 512);
 
-    struct Shot { const char* preset; std::vector<int> notes; const char* file; bool help; };
+    // key: 0 = C ... 11 = B;  scale: 0 = Scale Lock off, 4 = minor pentatonic
+    struct Shot { const char* preset; std::vector<int> notes; const char* file; bool help; int key = 0, scale = 0; };
     const Shot shots[] = {
-        { "Hero Lead",       { 69 },         "ui-hero-lead.png",  false },
-        { "Major Chord Arp", { 60 },         "ui-chord-arp.png",  false },
-        { "Drum Kit",        { 36, 42 },     "ui-drum-kit.png",   false },
-        { "Classic Square",  {},             "ui-help.png",       true  },
+        { "Hero Lead",       { 69 },         "ui-hero-lead.png",   false },
+        { "Major Chord Arp", { 60 },         "ui-chord-arp.png",   false },
+        { "Smart Chords",    { 62 },         "ui-scale-lock.png",  false, 9, 4 },   // A minor pentatonic
+        { "Drum Kit",        { 36, 42 },     "ui-drum-kit.png",    false },
+        { "Classic Square",  {},             "ui-help.png",        true  },
     };
 
     for (const auto& shot : shots)
     {
         selectProgram (proc, shot.preset);
+        if (auto* p = proc.apvts.getParameter ("scaleKey")) p->setValueNotifyingHost (p->convertTo0to1 ((float) shot.key));
+        if (auto* p = proc.apvts.getParameter ("scale"))    p->setValueNotifyingHost (p->convertTo0to1 ((float) shot.scale));
 
         // Play some audio so the scope has something to show
         AudioBuffer<float> buf (2, 512);

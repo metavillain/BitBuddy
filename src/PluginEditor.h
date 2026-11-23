@@ -96,14 +96,23 @@ class ChipKeyboard : public juce::MidiKeyboardComponent, public juce::SettableTo
 public:
     explicit ChipKeyboard (juce::MidiKeyboardState& state);
     void setDrumMode (bool shouldShowDrums);
+    void setScale (int key, int scaleIndex);
     juce::String getWhiteNoteText (int midiNoteNumber) override;
+    void drawWhiteNote (int note, juce::Graphics&, juce::Rectangle<float> area, bool isDown, bool isOver,
+                        juce::Colour lineColour, juce::Colour textColour) override;
+    void drawBlackNote (int note, juce::Graphics&, juce::Rectangle<float> area, bool isDown, bool isOver,
+                        juce::Colour noteFillColour) override;
     bool keyPressed (const juce::KeyPress&) override;
     void resized() override;
     int getBaseOctave() const noexcept { return baseOctave; }
 
 private:
+    juce::String letterFor (int note) const;   // the computer key that plays this note
+    bool isDimmed (int note) const;
+
     bool drumMode = false;
     int baseOctave = 5;
+    int scaleKey = 0, scaleIndex = 0;
 };
 
 //==============================================================================
