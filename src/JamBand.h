@@ -36,8 +36,6 @@ public:
         return chunk[(size_t) chunkPos++];
     }
 
-    int getStep() const noexcept { return step; }   // 0..63 across the 4-bar loop
-
 private:
     void renderChunk() noexcept;
     void playStep() noexcept;

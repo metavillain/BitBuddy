@@ -91,18 +91,33 @@ static void setParam (AudioProcessor& p, const String& name, float normalised)
 
 // Loads a preset by name. Hosts (and BitBuddy) ignore a program change to the
 // program that is already active, so switch away first to force a clean reload.
-static bool selectProgram (AudioProcessor& p, const String& name)
+static int programIndex (AudioProcessor& p, const String& name)
 {
     for (int i = 0; i < p.getNumPrograms(); ++i)
         if (p.getProgramName (i) == name)
-        {
-            if (p.getCurrentProgram() == i)
-                p.setCurrentProgram ((i + 1) % p.getNumPrograms());
-            p.setCurrentProgram (i);
-            return true;
-        }
+            return i;
     std::cout << "  !! program not found: " << name << "\n";
-    return false;
+    return 0;
+}
+
+static bool selectProgram (AudioProcessor& p, const String& name)
+{
+    const int i = programIndex (p, name);
+    if (p.getProgramName (i) != name)
+        return false;
+    if (p.getCurrentProgram() == i)
+        p.setCurrentProgram ((i + 1) % p.getNumPrograms());
+    p.setCurrentProgram (i);
+    return true;
+}
+
+static bool writePng (const Image& image, const File& file)
+{
+    file.deleteFile();
+    FileOutputStream out (file);
+    const bool ok = out.openedOk() && PNGImageFormat().writeImageToStream (image, out);
+    std::cout << "  wrote " << file.getFullPathName() << "\n";
+    return ok;
 }
 
 static AudioBuffer<float> render (AudioProcessor& plugin, std::vector<RawEvent> events, double seconds,
@@ -841,30 +856,10 @@ static int runTests (const String& path)
 
         proc.selectPreset (0);
         const bool keptByPlainPreset = proc.getCustomWave() == saw;   // presets without a drawing leave yours alone
-        int gameBoy = -1;
-        for (int i = 0; i < proc.getNumPrograms(); ++i)
-            if (proc.getProgramName (i) == "Game Boy Wave")
-                gameBoy = i;
-        proc.selectPreset (gameBoy);
+        proc.selectPreset (programIndex (proc, "Game Boy Wave"));
         const bool presetDrawingLoaded = BitBuddyProcessor::customWaveToString (proc.getCustomWave()) == "89BCDEEFFFEDCB98AC864211234688A6";
 
-        // Play the saw drawing at A4 through BitBuddy's own processor
-        proc.selectPreset (0);
-        set ("wave", 8.0f);
-        proc.setCustomWave (saw);
-        proc.prepareToPlay (sr, 512);
-        AudioBuffer<float> out (2, (int) sr), block (2, 512);
-        for (int pos = 0; pos + 512 <= out.getNumSamples(); pos += 512)
-        {
-            MidiBuffer midi;
-            if (pos == 0)
-                midi.addEvent (MidiMessage::noteOn (1, 69, 0.8f), 0);
-            block.clear();
-            proc.processBlock (block, midi);
-            out.copyFrom (0, pos, block, 0, 0, 512);
-        }
-        const double hz = pitchAt (out, 0.3, 8192, sr, 40.0);
-        // ---- MACROS ----
+        // Renders one held note through BitBuddy's own processor (macros + drawings aren't host parameters)
         auto renderDirect = [&] (int note, double seconds)
         {
             proc.prepareToPlay (sr, 512);
@@ -882,6 +877,14 @@ static int runTests (const String& path)
             return result;
         };
         auto macro = [] (const char* text) { bb::Macro m; BitBuddyProcessor::macroFromString (text, m); return m; };
+
+        // Play the saw drawing at A4
+        proc.selectPreset (0);
+        set ("wave", 8.0f);
+        proc.setCustomWave (saw);
+        const double hz = pitchAt (renderDirect (69, 1.0), 0.3, 8192, sr, 40.0);
+
+        // ---- MACROS ----
 
         // ARP: 6 steps (0.1 s) on the note, then 6 steps a fifth up, looping
         proc.selectPreset (0);
@@ -927,11 +930,7 @@ static int runTests (const String& path)
         const bool macroSaved = BitBuddyProcessor::macroToString (proc.getMacro (bb::kMacroArp)).startsWith ("3|0|0,4,7");
         proc.selectPreset (0);
         const bool clearedByPreset = ! proc.anyMacroOn();
-        int blip = -1;
-        for (int i = 0; i < proc.getNumPrograms(); ++i)
-            if (proc.getProgramName (i) == "Macro Chord Blip")
-                blip = i;
-        proc.selectPreset (blip);
+        proc.selectPreset (programIndex (proc, "Macro Chord Blip"));
         const bool presetMacros = proc.getMacro (bb::kMacroArp).length == 3 && proc.getMacro (bb::kMacroVolume).length == 12;
         res.check (macroSaved && clearedByPreset && presetMacros, "MACROS: saved with project, cleared by plain presets, loaded by macro presets",
                    String (macroSaved ? "saved" : "LOST") + ", " + (clearedByPreset ? "cleared" : "STILL ON") + ", "
@@ -1351,12 +1350,7 @@ static int runSnapshot (const File& outDir)
 
         MessageManager::getInstance()->runDispatchLoopUntil (400);   // let timers update the UI
 
-        const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
-        const auto file = outDir.getChildFile (shot.file);
-        file.deleteFile();
-        FileOutputStream out (file);
-        PNGImageFormat().writeImageToStream (image, out);
-        std::cout << "  wrote " << file.getFullPathName() << "\n";
+        writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), outDir.getChildFile (shot.file));
 
         MidiBuffer off;
         for (int n : shot.notes)
@@ -1377,12 +1371,7 @@ static int runSnapshot (const File& outDir)
             panel->setBoxVisible ("crunch", false);
             panel->moveBox ("play", 0);
             MessageManager::getInstance()->runDispatchLoopUntil (400);
-            const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
-            const auto file = outDir.getChildFile ("ui-custom-layout.png");
-            file.deleteFile();
-            FileOutputStream out (file);
-            PNGImageFormat().writeImageToStream (image, out);
-            std::cout << "  wrote " << file.getFullPathName() << "\n";
+            writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), outDir.getChildFile ("ui-custom-layout.png"));
             panel->resetLayout();
         }
     }
@@ -1616,11 +1605,7 @@ static int runIcon (const File& file)
         }
     }
 
-    file.deleteFile();
-    FileOutputStream out (file);
-    const bool ok = out.openedOk() && PNGImageFormat().writeImageToStream (img, out);
-    std::cout << "  wrote " << file.getFullPathName() << (ok ? "" : "  (FAILED)") << "\n";
-    return ok ? 0 : 1;
+    return writePng (img, file) ? 0 : 1;
 }
 
 //==============================================================================

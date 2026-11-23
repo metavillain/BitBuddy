@@ -42,6 +42,7 @@ String semitoneText (float v, int)
 
 String fineSemitoneText (float v, int)  { return String (v, 2) + " st"; }
 String hzText (float v, int)            { return String (v, 1) + " Hz"; }
+String hzOrKhzText (float v, int)       { return v < 1000.0f ? String (juce::roundToInt (v)) + " Hz" : String (v / 1000.0f, 1) + " kHz"; }
 
 String glideText (float v, int)
 {
@@ -66,24 +67,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     using namespace juce;
     AudioProcessorValueTreeState::ParameterLayout layout;
 
+    // version = the BitBuddy release that added the parameter (hosts use it to keep their order stable):
+    // 1 = BitBuddy 1.0, 2 = BitBuddy 1.1
     auto addFloat = [&layout] (const char* id, const char* name, NormalisableRange<float> range, float def,
                                std::function<String (float, int)> toText,
-                               std::function<float (const String&)> fromText = nullptr)
+                               std::function<float (const String&)> fromText = nullptr, int version = 1)
     {
         auto attrs = FloatAttrs().withStringFromValueFunction (std::move (toText));
         if (fromText != nullptr)
             attrs = attrs.withValueFromStringFunction (std::move (fromText));
-        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id, 1 }, name, range, def, attrs));
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id, version }, name, range, def, attrs));
     };
 
-    auto addFloatV2 = [&layout] (const char* id, const char* name, NormalisableRange<float> range, float def,
-                                 std::function<String (float, int)> toText)
-    {
-        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id, 2 }, name, range, def,
-                                                           FloatAttrs().withStringFromValueFunction (std::move (toText))));
-    };
-
-    // version = the BitBuddy release that added the parameter (hosts use it to keep their order stable)
     auto addChoice = [&layout] (const char* id, const char* name, const StringArray& choices, int def, int version = 1)
     {
         layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id, version }, name, choices, def));
@@ -133,10 +128,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 
     // 7. C64 filter (added in 1.1)
     addChoice  (ids::filterType,   "Filter",     filterTypeNames(), 0, 2);
-    addFloatV2 (ids::filterCutoff, "Cutoff",     { 60.0f, 12000.0f, 0.0f, 0.3f }, 1500.0f,
-                [] (float v, int) { return v < 1000.0f ? String (juce::roundToInt (v)) + " Hz" : String (v / 1000.0f, 1) + " kHz"; });
-    addFloatV2 (ids::filterReso,   "Resonance",  { 0.0f, 1.0f }, 0.35f, percentText);
-    addFloatV2 (ids::filterEnv,    "Filter Env", { 0.0f, 1.0f }, 0.0f,  percentText);
+    addFloat (ids::filterCutoff, "Cutoff",     { 60.0f, 12000.0f, 0.0f, 0.3f }, 1500.0f, hzOrKhzText, nullptr, 2);
+    addFloat (ids::filterReso,   "Resonance",  { 0.0f, 1.0f }, 0.35f, percentText, percentFromText, 2);
+    addFloat (ids::filterEnv,    "Filter Env", { 0.0f, 1.0f }, 0.0f,  percentText, percentFromText, 2);
 
     // 8. Console mode (added in 1.1): sound like a real NES / Game Boy / C64
     addChoice (ids::console, "Console", consoleNames(), 0, 2);

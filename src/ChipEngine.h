@@ -174,6 +174,7 @@ private:
     float renderTone (Voice&) noexcept;
     float chipLevel (Voice&) noexcept;
     void restartMacros (Voice&) noexcept;
+    void nextMacroFrame (Voice&) noexcept;
     void applyMacroFrame (Voice&) noexcept;
     bool anyMacroOn = false;
     double macroStepSamples = 735.0;

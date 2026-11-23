@@ -716,6 +716,21 @@ void ChipEngine::retrigger (Voice& v, int note)
     lastNote = note;
 }
 
+// Kept out of the per-sample code: it only runs 60 times a second
+#if defined (_MSC_VER)
+ #define BB_NOINLINE __declspec (noinline)
+#else
+ #define BB_NOINLINE __attribute__ ((noinline))
+#endif
+
+BB_NOINLINE void ChipEngine::nextMacroFrame (Voice& v) noexcept
+{
+    v.macroCounter -= macroStepSamples;
+    if (v.macroFrame < 100000)
+        ++v.macroFrame;
+    applyMacroFrame (v);
+}
+
 // Macros start from step 0 on every new note (like FamiTracker)
 void ChipEngine::restartMacros (Voice& v) noexcept
 {
@@ -874,20 +889,16 @@ float ChipEngine::renderTone (Voice& v) noexcept
     {
         v.macroCounter += 1.0;
         if (v.macroCounter >= macroStepSamples)
-        {
-            v.macroCounter -= macroStepSamples;
-            if (v.macroFrame < 100000)
-                ++v.macroFrame;
-            applyMacroFrame (v);
-        }
+            nextMacroFrame (v);
         note += v.macroNotes;
     }
 
     // Chord arpeggio: flip through the chord notes, without restarting the note
     if (p.arpMode == ArpMode::Chord)
     {
-        const auto& seq = chordSeqs[(size_t) chordShapeFor (v.note)];
-        const int len = chordSeqLens[(size_t) chordShapeFor (v.note)];
+        const auto shape = (size_t) chordShapeFor (v.note);
+        const auto& seq = chordSeqs[shape];
+        const int len = chordSeqLens[shape];
         v.arpCounter += 1.0;
         if (v.arpCounter >= arpStepSamples)
         {
@@ -908,7 +919,9 @@ float ChipEngine::renderTone (Voice& v) noexcept
     const float s = oscillate (v);
     v.t += invSr;
 
-    return s * chipLevel (v) * kVoiceGain;
+    // The common case (no console limits, no macros) skips the chip-volume logic
+    const bool plain = p.console == Console::Modern && ! anyMacroOn;
+    return s * (plain ? v.env * v.velocity : chipLevel (v)) * kVoiceGain;
 }
 
 void ChipEngine::updateModulation (Voice& v) noexcept

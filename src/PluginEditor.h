@@ -167,10 +167,12 @@ public:
     explicit Scope (ScopeBuffer& source);
     void refresh();
     void paint (juce::Graphics&) override;
+    float getLevel() const noexcept { return level; }   // loudness of the newest ~10 ms (for BIT)
 
 private:
     ScopeBuffer& source;
     std::array<float, 2048> samples {};
+    float level = 0.0f;
     int frame = 0;
     bool wasSilent = false, lastBlink = false;
 };
@@ -346,6 +348,7 @@ private:
 
     void timerCallback() override;
     void showHintFor (juce::Component*);
+    int choiceOf (const char* paramId, int maxIndex) const;   // a choice parameter's current index
 
     // Computer-keyboard playing: only the piano ever takes keyboard focus, so
     // clicking knobs, buttons or menus never "steals" your letter keys.

@@ -53,8 +53,20 @@ BitBuddyProcessor::BitBuddyProcessor()
     pFilterEnv    = get (bb::ids::filterEnv);
     pConsole      = get (bb::ids::console);
 
+    // Any knob that moves marks the engine settings as out of date
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+            apvts.addParameterListener (rp->getParameterID(), this);
+
     setCustomWave (bb::defaultCustomWave());
     clearMacros();
+}
+
+BitBuddyProcessor::~BitBuddyProcessor()
+{
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+            apvts.removeParameterListener (rp->getParameterID(), this);
 }
 
 //==============================================================================
@@ -66,7 +78,10 @@ int BitBuddyProcessor::getCustomWaveStep (int index) const noexcept
 void BitBuddyProcessor::setCustomWaveStep (int index, int value) noexcept
 {
     if (juce::isPositiveAndBelow (index, bb::kCustomWaveSteps))
+    {
         customWave[(size_t) index].store ((std::uint8_t) juce::jlimit (0, 15, value), std::memory_order_relaxed);
+        paramsDirty = true;
+    }
 }
 
 void BitBuddyProcessor::setCustomWave (const bb::CustomWave& w) noexcept
@@ -121,6 +136,7 @@ void BitBuddyProcessor::setMacro (int lane, const bb::Macro& m) noexcept
     const int length = juce::jlimit (0, bb::kMacroSteps, m.length);
     s.loop.store (m.loop >= 0 && m.loop < length ? m.loop : -1, std::memory_order_relaxed);
     s.length.store (length, std::memory_order_relaxed);
+    paramsDirty = true;
 }
 
 void BitBuddyProcessor::setMacroStep (int lane, int step, int value) noexcept
@@ -130,6 +146,7 @@ void BitBuddyProcessor::setMacroStep (int lane, int step, int value) noexcept
         const auto& info = bb::kMacroLanes[lane];
         macros[(size_t) lane].values[(size_t) step].store ((std::int8_t) juce::jlimit (info.minValue, info.maxValue, value),
                                                            std::memory_order_relaxed);
+        paramsDirty = true;
     }
 }
 
@@ -184,26 +201,28 @@ bool BitBuddyProcessor::macroFromString (const juce::String& s, bb::Macro& m)
     return true;
 }
 
-void BitBuddyProcessor::saveMacrosTo (juce::ValueTree& tree) const
+// The parts of a sound that aren't knobs - your drawn wave and the macros -
+// saved the same way in projects, your presets and the factory presets.
+void BitBuddyProcessor::writeExtras (const std::function<void (const juce::String& key, const juce::String& value)>& set) const
 {
+    set ("customWave", customWaveToString (getCustomWave()));
     for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
-        tree.setProperty ("macro" + juce::String (lane), macroToString (getMacro (lane)), nullptr);
+        set ("macro" + juce::String (lane), macroToString (getMacro (lane)));
 }
 
-void BitBuddyProcessor::saveMacrosTo (juce::XmlElement& xml) const
+void BitBuddyProcessor::readExtras (const std::function<juce::String (const juce::String& key)>& get, bool keepWaveIfMissing)
 {
-    for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
-        xml.setAttribute ("macro" + juce::String (lane), macroToString (getMacro (lane)));
-}
+    bb::CustomWave w {};
+    if (customWaveFromString (get ("customWave"), w))
+        setCustomWave (w);
+    else if (! keepWaveIfMissing)
+        setCustomWave (bb::defaultCustomWave());
 
-// Missing lanes (older projects / presets) are switched off
-void BitBuddyProcessor::loadMacrosFrom (const std::function<juce::String (const juce::String&)>& getProperty)
-{
-    clearMacros();
+    clearMacros();   // lanes that aren't mentioned are off
     for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
     {
         bb::Macro m;
-        if (macroFromString (getProperty ("macro" + juce::String (lane)), m))
+        if (macroFromString (get ("macro" + juce::String (lane)), m))
             setMacro (lane, m);
     }
 }
@@ -244,21 +263,25 @@ void BitBuddyProcessor::prepareToPlay (double sampleRate, int)
     outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (pVolume->load()));
 
     keyboardState.reset();
-    updateEngineParams();
+    lastTempo = hostTempo();
+    paramsDirty = false;
+    updateEngineParams (lastTempo);
 }
 
-void BitBuddyProcessor::updateEngineParams()
+// Tempo from the DAW (falls back to 120 BPM in the standalone app)
+double BitBuddyProcessor::hostTempo() const
 {
-    // Tempo from the DAW (falls back to 120 BPM in the standalone app)
-    double bpm = 120.0;
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
             if (auto b = pos->getBpm())
-                bpm = *b;
-    bpm = juce::jlimit (20.0, 999.0, bpm);
-    const double secondsPerBeat = 60.0 / bpm;
+                return juce::jlimit (20.0, 999.0, *b);
+    return 120.0;
+}
 
-    auto idx = [] (std::atomic<float>* p, int maxIndex) { return juce::jlimit (0, maxIndex, (int) std::lround (p->load())); };
+void BitBuddyProcessor::updateEngineParams (double bpm)
+{
+    const double secondsPerBeat = 60.0 / bpm;
+    auto idx = idxOf;
 
     bb::EngineParams ep;
     ep.wave       = (bb::Wave) idx (pWave, bb::kNumWaves - 1);
@@ -347,7 +370,14 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     // Merge notes played on the on-screen keyboard
     keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
-    updateEngineParams();
+
+    // Re-read the settings only when a knob, drawing, macro or the DAW tempo changed
+    const double tempo = hostTempo();
+    if (paramsDirty.exchange (false) || tempo != lastTempo)
+    {
+        lastTempo = tempo;
+        updateEngineParams (tempo);
+    }
 
     // 1. Synth voices -> channel 0, split at each MIDI event for sample accuracy
     float* mono = buffer.getWritePointer (0);
@@ -513,19 +543,18 @@ void BitBuddyProcessor::loadProgram (int index)
     userPresetLoaded = false;
     bb::applyPreset (apvts, index);
 
-    // Presets that use DRAW bring their own drawing; others leave yours alone
+    // Presets that use DRAW bring their own drawing (others leave yours alone);
+    // macros are part of a sound, so a preset without them switches them off
     const auto& preset = bb::factoryPresets()[(size_t) index];
-    bb::CustomWave w {};
-    if (preset.customWave != nullptr && customWaveFromString (preset.customWave, w))
-        setCustomWave (w);
-
-    // Macros are part of a sound: a preset without them switches them off
-    loadMacrosFrom ([&preset] (const juce::String& key)
+    readExtras ([&preset] (const juce::String& key) -> juce::String
     {
-        const int lane = key.getTrailingIntValue();
-        return juce::isPositiveAndBelow (lane, bb::kNumMacroLanes) && preset.macros[(size_t) lane] != nullptr
-                   ? juce::String (preset.macros[(size_t) lane]) : juce::String();
-    });
+        const char* text = nullptr;
+        if (key == "customWave")
+            text = preset.customWave;
+        else if (const int lane = key.getTrailingIntValue(); juce::isPositiveAndBelow (lane, bb::kNumMacroLanes))
+            text = preset.macros[(size_t) lane];
+        return text != nullptr ? juce::String (text) : juce::String();
+    }, true);
 }
 
 const juce::String BitBuddyProcessor::getProgramName (int index)
@@ -727,8 +756,7 @@ bool BitBuddyProcessor::saveUserPreset (const juce::String& rawName)
 
     juce::XmlElement xml ("BitBuddyPreset");
     xml.setAttribute ("name", name);
-    xml.setAttribute ("customWave", customWaveToString (getCustomWave()));
-    saveMacrosTo (xml);
+    writeExtras ([&xml] (const juce::String& key, const juce::String& value) { xml.setAttribute (key, value); });
    #ifdef JucePlugin_VersionString
     xml.setAttribute ("version", JucePlugin_VersionString);
    #endif
@@ -773,10 +801,7 @@ bool BitBuddyProcessor::loadUserPreset (const juce::String& name)
             rp->setValueNotifyingHost (rp->convertTo0to1 ((float) e->getDoubleAttribute ("value")));
     }
 
-    bb::CustomWave w {};
-    if (customWaveFromString (xml->getStringAttribute ("customWave"), w))
-        setCustomWave (w);
-    loadMacrosFrom ([&xml] (const juce::String& key) { return xml->getStringAttribute (key); });
+    readExtras ([&xml] (const juce::String& key) { return xml->getStringAttribute (key); }, true);
 
     customName = name;
     userPresetLoaded = true;
@@ -797,8 +822,7 @@ void BitBuddyProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("program", currentProgram, nullptr);
     state.setProperty ("customName", customName, nullptr);
     state.setProperty ("userPreset", userPresetLoaded, nullptr);
-    state.setProperty ("customWave", customWaveToString (getCustomWave()), nullptr);
-    saveMacrosTo (state);
+    writeExtras ([&state] (const juce::String& key, const juce::String& value) { state.setProperty (key, value, nullptr); });
     state.setProperty ("jamStyle", jamStyle.load(), nullptr);   // (the band always starts stopped)
     state.setProperty ("jamTempo", jamTempo.load(), nullptr);
 
@@ -816,9 +840,7 @@ void BitBuddyProcessor::setStateInformation (const void* data, int sizeInBytes)
             currentProgram = juce::jlimit (0, getNumPrograms() - 1, (int) tree.getProperty ("program", 0));
             customName = tree.getProperty ("customName", "").toString();
             userPresetLoaded = (bool) tree.getProperty ("userPreset", false);
-            bb::CustomWave w {};
-            setCustomWave (customWaveFromString (tree.getProperty ("customWave", "").toString(), w) ? w : bb::defaultCustomWave());
-            loadMacrosFrom ([&tree] (const juce::String& key) { return tree.getProperty (juce::Identifier (key), "").toString(); });
+            readExtras ([&tree] (const juce::String& key) { return tree.getProperty (juce::Identifier (key), "").toString(); }, false);
             setJamStyle ((int) tree.getProperty ("jamStyle", 0));
             setJamTempo ((float) (double) tree.getProperty ("jamTempo", bb::jamStyleTempo (jamStyle)));
             apvts.replaceState (tree);

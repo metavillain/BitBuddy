@@ -47,11 +47,12 @@ private:
     int silentRun = 0;
 };
 
-class BitBuddyProcessor : public juce::AudioProcessor
+class BitBuddyProcessor : public juce::AudioProcessor,
+                          private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     BitBuddyProcessor();
-    ~BitBuddyProcessor() override = default;
+    ~BitBuddyProcessor() override;
 
     //==========================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -151,7 +152,7 @@ public:
     ScopeBuffer scope;
 
 private:
-    void updateEngineParams();
+    void updateEngineParams (double tempoBpm);
     void handleMidi (const juce::MidiMessage&);
     void writeRecording (const juce::AudioBuffer<float>&, int numSamples) noexcept;
     static int idxOf (std::atomic<float>* p, int maxIndex) noexcept;
@@ -186,9 +187,14 @@ private:
         std::array<std::atomic<std::int8_t>, bb::kMacroSteps> values {};
     };
     std::array<MacroStore, bb::kNumMacroLanes> macros;
-    void saveMacrosTo (juce::ValueTree&) const;
-    void saveMacrosTo (juce::XmlElement&) const;
-    void loadMacrosFrom (const std::function<juce::String (const juce::String&)>& getProperty);
+    void writeExtras (const std::function<void (const juce::String& key, const juce::String& value)>& set) const;
+    void readExtras (const std::function<juce::String (const juce::String& key)>& get, bool keepWaveIfMissing);
+
+    // Engine settings are only re-read when something changed (cheap when idle)
+    void parameterChanged (const juce::String&, float) override { paramsDirty = true; }
+    double hostTempo() const;
+    std::atomic<bool> paramsDirty { true };
+    double lastTempo = 120.0;
 
     int currentProgram = 0;
     juce::String customName;

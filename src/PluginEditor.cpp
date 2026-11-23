@@ -100,6 +100,18 @@ void drawPixelLine (juce::Graphics& g, juce::Rectangle<float> area, float pixel,
     }
 }
 
+// Drawing with the mouse (waves, macros): a fast mouse skips steps, so fill
+// them in on a straight line from the last point
+void fillSkippedSteps (int fromStep, int fromValue, int toStep, int toValue, const std::function<void (int, int)>& set)
+{
+    if (fromStep < 0 || fromStep == toStep)
+        return;
+    const int dir = toStep > fromStep ? 1 : -1;
+    for (int s = fromStep + dir; s != toStep; s += dir)
+        set (s, juce::roundToInt (juce::jmap ((float) (s - fromStep), 0.0f, (float) (toStep - fromStep),
+                                              (float) fromValue, (float) toValue)));
+}
+
 // The C64 filter's colour: the palette's red, lifted so text stays readable
 juce::Colour filterAccent() { return pal::red.brighter (0.45f); }
 
@@ -532,14 +544,8 @@ void WaveDrawer::drawAt (juce::Point<float> pos, bool connectToLast)
     const int step = juce::jlimit (0, kCustomWaveSteps - 1, (int) ((pos.x - grid.getX()) / grid.getWidth() * kCustomWaveSteps));
     const int value = juce::jlimit (0, 15, (int) std::floor ((grid.getBottom() - pos.y) / grid.getHeight() * 16.0f));
 
-    if (connectToLast && lastStep >= 0 && lastStep != step)
-    {
-        // Fill in the steps a fast mouse skipped over
-        const int dir = step > lastStep ? 1 : -1;
-        for (int s = lastStep + dir; s != step; s += dir)
-            proc.setCustomWaveStep (s, juce::roundToInt (juce::jmap ((float) (s - lastStep), 0.0f, (float) (step - lastStep),
-                                                                     (float) lastValue, (float) value)));
-    }
+    if (connectToLast)
+        fillSkippedSteps (lastStep, lastValue, step, value, [this] (int s, int v) { proc.setCustomWaveStep (s, v); });
     proc.setCustomWaveStep (step, value);
     lastStep = step;
     lastValue = value;
@@ -807,13 +813,8 @@ void MacroEditor::drawAt (juce::Point<float> pos, bool connectToLast)
                                     juce::roundToInt ((float) info.minValue
                                                       + (grid.getBottom() - pos.y) / grid.getHeight() * (float) (info.maxValue - info.minValue)));
 
-    if (connectToLast && lastStep >= 0 && lastStep != step)
-    {
-        const int dir = step > lastStep ? 1 : -1;
-        for (int s = lastStep + dir; s != step; s += dir)
-            proc.setMacroStep (lane, s, juce::roundToInt (juce::jmap ((float) (s - lastStep), 0.0f, (float) (step - lastStep),
-                                                                      (float) lastValue, (float) value)));
-    }
+    if (connectToLast)
+        fillSkippedSteps (lastStep, lastValue, step, value, [this] (int s, int v) { proc.setMacroStep (lane, s, v); });
     proc.setMacroStep (lane, step, value);
 
     // Drawing past the end (or on a lane that's off) makes the lane long enough
@@ -877,8 +878,13 @@ void Scope::refresh()
 
     // Silence only needs a redraw when the "PLAY A NOTE!" text blinks
     float peak = 0.0f;
-    for (auto s : samples)
-        peak = juce::jmax (peak, std::abs (s));
+    level = 0.0f;
+    for (size_t i = 0; i < samples.size(); ++i)
+    {
+        peak = juce::jmax (peak, std::abs (samples[i]));
+        if (i >= samples.size() - 512)
+            level = juce::jmax (level, std::abs (samples[i]));
+    }
 
     const bool silent = peak < 0.002f;
     const bool blinkOn = (frame / 20) % 2 == 0;
@@ -2061,15 +2067,10 @@ void MainPanel::timerCallback()
     envelopeView.refresh();
     filterBox.refresh();
 
-    // BIT bounces to the music (peak of the last ~10 ms) and dances with the band
-    std::array<float, 512> recent {};
-    proc.scope.copyLatest (recent.data(), (int) recent.size());
-    float peak = 0.0f;
-    for (auto s : recent)
-        peak = juce::jmax (peak, std::abs (s));
-    mascot.update (peak, proc.isJamOn(), proc.getJamTempo());
+    // BIT bounces to the music and dances with the band
+    mascot.update (scope.getLevel(), proc.isJamOn(), proc.getJamTempo());
 
-    const int wave = juce::jlimit (0, kNumWaves - 1, juce::roundToInt (state.getRawParameterValue (ids::wave)->load()));
+    const int wave = choiceOf (ids::wave, kNumWaves - 1);
     if (wave != lastWave)
     {
         lastWave = wave;
@@ -2094,7 +2095,7 @@ void MainPanel::timerCallback()
         macroViewButton.setColour (juce::TextButton::buttonColourId, anyMacro ? pal::lime.withAlpha (0.45f) : pal::dark);
     }
 
-    const int arpMode = juce::jlimit (0, 2, juce::roundToInt (state.getRawParameterValue (ids::arpMode)->load()));
+    const int arpMode = choiceOf (ids::arpMode, 2);
     if (arpMode != lastArpMode)
     {
         lastArpMode = arpMode;
@@ -2190,13 +2191,15 @@ void MainPanel::setScreenView (ScreenView view)
         macroEditor.refresh();
 }
 
+int MainPanel::choiceOf (const char* paramId, int maxIndex) const
+{
+    return juce::jlimit (0, maxIndex, juce::roundToInt (state.getRawParameterValue (paramId)->load()));
+}
+
 void MainPanel::updateScaleTip()
 {
-    auto idx = [this] (const char* id, int maxIndex)
-    { return juce::jlimit (0, maxIndex, juce::roundToInt (state.getRawParameterValue (id)->load())); };
-
-    const int key = idx (ids::scaleKey, 11), scale = idx (ids::scale, kNumScales - 1);
-    const bool smart = idx (ids::arpChord, kSmartChordIndex) == kSmartChordIndex;
+    const int key = choiceOf (ids::scaleKey, 11), scale = choiceOf (ids::scale, kNumScales - 1);
+    const bool smart = choiceOf (ids::arpChord, kSmartChordIndex) == kSmartChordIndex;
     const int stateNow = key + 12 * scale + 12 * kNumScales * (smart ? 1 : 0);
     if (stateNow == lastScaleState)
         return;
