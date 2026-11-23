@@ -87,7 +87,7 @@ Write-Host '== UI snapshots...'
 $snaps = Join-Path $root 'build\snapshots'
 & $testHost --snapshot $snaps | Out-Null
 Copy-Item (Join-Path $snaps 'ui-hero-lead.png') (Join-Path $root 'docs\screenshot.png') -Force
-$summary.Add(('{0,-14} OK    build\snapshots\ (4 images), docs\screenshot.png' -f 'Snapshots'))
+$summary.Add(('{0,-14} OK    build\snapshots\ ({1} images), docs\screenshot.png' -f 'Snapshots', @(Get-ChildItem $snaps -Filter '*.png').Count))
 
 # --- summary -----------------------------------------------------------------------
 $size = (Get-Item (Join-Path $vst3 'Contents\x86_64-win\BitBuddy.vst3')).Length

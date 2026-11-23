@@ -37,6 +37,18 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 26 | Android: `android/BitBuddy.jucer` (JUCE CMake can't do Android) | Projucer → Gradle APK in CI + Android 14 emulator smoke test; zero permissions | – |
 | 27 | iOS: CMake Xcode build, AUv3 + app | CI simulator build + iPad simulator smoke test (device install needs an Apple account) | – |
 | 28 | App icon + touch UI (tap = help, fit-to-screen) | one `assets/icon.png` for all platforms | – |
+| 29 | CI fixes: Projucer `useAppConfig="0"`, Android launch activity, iOS app path; macOS runner capacity re-runs | **v1.0.1 released** on all 4 platforms (Windows/Mac zips + APK) | GitHub Mac runners failed to start twice (capacity, not code) |
+| 30 | 1.1 on a feature branch (release stays as tested) | user: "build all of these in the order you best see fit" | – |
+| 31 | Scale Lock + Smart chords (`Scales.h`, key→note map in the engine) | 52/52; static_asserts on the music theory | test expectation wrong once (B→C, not A, in A minor penta) |
+| 32 | Piano shows the scale + computer-key letters | snapshot review | – |
+| 33 | My Presets, per-section dice, MUTATE | 56/56 | – |
+| 34 | C64 filter (TPT SVF + envelope) as a self-contained `Box` | 61/61 | – |
+| 35 | DRAW wave, console modes, macros | 64 → 68 → 74/74 | NES-triangle test window too early (test bug) |
+| 36 | RECORD (WAV + MIDI) + JAM band | 75 → 77/77 | crash cymbal needs ~4 s to fade (test window) |
+| 37 | BIT mascot + 4 colour themes (palette swap + live rebuild) | theme snapshots | – |
+| 38 | User asked mid-way: hideable / movable boxes + VIEW menu | every section → `Box`; flow layout; window reshapes; layout saved | a PowerShell edit script carried on after an exception and deleted 141 lines (rebuilt from context; §4) |
+| 39 | Cleanup + efficiency pass (§8b) | idle back to 1.0 speed, 3 save/load paths → 1, 0 warnings | benchmark noise from other apps (§4) |
+| 40 | Mutation tests on the new code | 2/2 caught (drawing overwritten → 1 FAIL; knob changes ignored → 9 FAIL) | – |
 
 ---
 
@@ -65,6 +77,11 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
     for after the Windows build. Knowing up front means touch-friendly UI, an app icon, and CI from day one.
 14. **Public or private repo, and do you have an Apple Developer account ($99/yr) or an Android phone?**
     Decides CI cost (macOS minutes are 10× on private repos), the license, and whether iOS can be shared.
+15. **Fixed layout or customisable?** Hideable / movable boxes were asked for after 9 features were built
+    with absolute positions; every section had to be turned into a box. Building sections as self-contained
+    components from day one makes this nearly free.
+16. **Which features belong in the app only?** (Jam, Record: a DAW already has tracks and recording.)
+    Decide before the UI is laid out, so the plugin view doesn't show dead controls.
 
 ---
 
@@ -151,6 +168,25 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
   `build-ios/BitBuddy_artefacts/<config>/Standalone/BitBuddy.app` (no `iphonesimulator` in the path).
 - **macOS runners can fail to start** ("not acquired by Runner … even after multiple attempts" = GitHub
   capacity, not your code). Just re-run; check the job's annotations before debugging anything.
+- **PowerShell 5.1 mangles double quotes in native-command arguments** (`git commit -m "... \"x\" ..."`
+  became stray pathspecs). Write the message to a file and use `git commit -F file`.
+- **PowerShell variables are case-insensitive:** a loop variable `$h` silently overwrote `$H` (the home folder).
+- **`System.Web.Script.Serialization` dictionaries need `.ContainsKey()`** in PowerShell (`.Contains()` is an
+  explicit interface member and fails).
+- **A script that edits files must stop on the first error** (`$ErrorActionPreference = 'Stop'` or an explicit
+  `throw`): one carried on after a missing input file and replaced 141 lines with nothing. Recovered because
+  the lines had just been read; otherwise `git checkout` the file.
+- **Benchmarks are noisy when other apps are busy:** compare a change against a reference scenario measured in
+  the *same* run (here: idle), and repeat 2-3 times before believing a 10% difference.
+- **Test the plugin as the app:** `AudioProcessor::setTypeOfNextNewPlugin (wrapperType_Standalone)` before
+  constructing the processor shows app-only UI (JAM / REC) in snapshots and UI tests.
+- **Tests must not touch the user's settings:** BitBuddy's settings file (theme, layout) has a test override
+  (`bb::useSettingsFile`).
+- **After changing the version, delete `build/BitBuddy_artefacts/JuceLibraryCode/BitBuddy_resources.rc`:** JUCE
+  doesn't regenerate the Windows version resource, so the exe's file properties kept saying 1.0.1 (the plugin
+  code and VST3 moduleinfo did say 1.1.0). Clean CI builds are fine.
+- **A desktop test window's native title bar skews its outer size** under a fixed aspect ratio; check the
+  constrainer's ratio instead of the window size.
 - **Projucer's Android defaults request INTERNET, READ_MEDIA_*, storage and notification permissions.**
   Turn off `androidInternetNeeded`, `androidReadMedia*Permission`, `androidExternalWriteNeeded`,
   `androidPushNotifications` → zero permissions.
@@ -237,6 +273,8 @@ For instruments, add an interaction test for the main play loop from day one.
 | pluginval L10 | **SUCCESS** (16 s) | |
 | After cleanup pass | **46 / 46**, focus 9/9, pluginval OK | `docs/reports/` |
 | Mutation | **3 / 3 caught** | |
+| 1.1 (all features + cleanup) | **77 / 77**, focus + layout 10/10, 0 warnings | `docs/reports/` |
+| 1.1 mutation | **2 / 2 caught** | |
 
 Root causes of the run-1 failures:
 
@@ -315,18 +353,25 @@ mutant (naive idle) → echo −120 dB = FAIL; fix (stay awake for the echo's fu
 Not done (on purpose): dropping the static C++ runtime (+~0.3 MB, but needed so it runs on any PC);
 disabling JUCE's hidden MIDI-CC parameters (needed for mod wheel / pitch bend in VST3).
 
-## 9. Fun-factor ideas (ranked by fun per effort)
+### 8b. 1.1 cleanup + efficiency pass
 
-1. **Scale Lock + Smart Chords**: every key snaps to a chosen key/scale (no wrong notes), and CHORD mode
-   picks major/minor automatically per scale degree (A → Am, F → F...). Small effort, big beginner payoff.
-2. **Jam Mode**: a built-in drums + bass + chords loop in the standalone to noodle a melody over.
-3. **Record button**: save what you played in the standalone as WAV + MIDI (no DAW needed).
-4. **Draw your own wave**: Game Boy "wave channel": draw a 32-step waveform on the SCREEN.
-5. **Instrument macros**: FamiTracker-style volume / arpeggio / pitch / duty sequences drawn as bars.
-6. **My Presets + per-section dice + Mutate** (nudge a sound instead of fully randomising).
-7. **C64 SID-style resonant filter** for squelchy basses.
-8. **Visual fun**: letter labels on the piano keys, a pixel mascot that dances to the notes, Game Boy-green / CRT themes.
-9. **Console modes**: NES / Game Boy / C64 voicing presets with each chip's limits.
+| Metric | Before (1.1 features done) | After | How |
+|---|---|---|---|
+| Idle, no notes | 2,829× real time (0.035 %) | **~3,800×** (0.026 %, = 1.0.1) | engine settings re-read only when a knob / drawing / macro / tempo changes (parameter listener + dirty flag) instead of every block |
+| 8-voice chords | ~108× (relative to idle) | ~15 % faster | one chord-shape lookup, a plain fast path (no chip mode, no macros), macro stepping moved out of line |
+| Save / load of drawings + macros | 3 hand-written copies (project, your presets, factory presets) | **1** `writeExtras` / `readExtras` pair | |
+| Small duplicates | `addFloat` + `addFloatV2`, 3 "choice index" formulas, 2 step-fill loops, BIT copying the audio a 2nd time, unused `JamBand::getStep` | 1 each / removed | |
+| Test code | repeated preset lookups, PNG writing, a 2nd direct-render loop | `programIndex`, `writePng`, `renderDirect` | |
+| Binary size | VST3 6.68 MB with all 1.1 features | same (1.0.1: 6.73 MB) | JUCE dominates; the features cost ~nothing |
+
+*Lesson again: the "skip work when nothing changed" optimisation got its own mutation test (ignore knob
+changes → 9 tests fail).*
+
+## 9. Fun-factor ideas: all built in 1.1
+
+All nine are in 1.1, in this order (each enables the next): Scale Lock + Smart chords → piano scale
+display + key letters → My Presets / dice / Mutate → C64 filter → DRAW wave → console modes → macros →
+RECORD → JAM → BIT + themes, then (user request) hideable / movable boxes + VIEW.
 
 ## 10. Possible next steps
 
@@ -334,6 +379,7 @@ disabling JUCE's hidden MIDI-CC parameters (needed for mod wheel / pitch bend in
   The script now verifies the copy by hash (elevated processes don't report failure back).
 - Steinberg VST3 validator (build from the full VST3 SDK, pass to pluginval `--vst3validator`).
 - CLAP build via `clap-juce-extensions` (native in Bitwig/REAPER/FL Studio).
-- GitHub Actions CI: build + `--test` + pluginval on every push; a macOS runner for an AU build.
-- GitHub Release with a zipped `BitBuddy.vst3` + standalone `.exe`.
-- User presets (save your own sounds) and a per-step "tracker" arpeggio editor.
+- ~~GitHub Actions CI~~, ~~GitHub Release~~, ~~user presets~~, ~~macro (tracker-style) editor~~: done.
+- Share recordings from the desktop app (email / drag out), a recording "count-in".
+- Jam: more styles, a song-structure mode (verse / chorus), MIDI export of the band.
+- iOS: share via TestFlight (needs an Apple Developer account).

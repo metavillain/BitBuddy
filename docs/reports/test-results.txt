@@ -5,31 +5,37 @@ plugin: C:\Claude\BitBuddy\build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
   PASS  Plugin name                                 BitBuddy
   PASS  Accepts MIDI (instrument)                   yes
   PASS  Stereo output                               2 ch
-  PASS  Automatable parameters in the DAW           26 (+2080 hidden MIDI-CC slots)
-  PASS  Factory presets exposed to the DAW          21
+  PASS  Automatable parameters in the DAW           33 (+2080 hidden MIDI-CC slots)
+  PASS  Factory presets exposed to the DAW          27
 
   -- every preset: sound / no NaN / no clipping / no stuck notes --
   PASS  Preset 00 Classic Square                    peak -14.5 dB, tail -120.0 dB
   PASS  Preset 01 Hero Lead                         peak -11.1 dB, tail -120.0 dB
-  PASS  Preset 02 Thin Lead                         peak -9.7 dB, tail -120.0 dB
-  PASS  Preset 03 Triangle Bass                     peak -14.3 dB, tail -120.0 dB
-  PASS  Preset 04 Punchy Bass                       peak -13.5 dB, tail -120.0 dB
-  PASS  Preset 05 Major Chord Arp                   peak -11.1 dB, tail -120.0 dB
-  PASS  Preset 06 Minor Chord Arp                   peak -14.5 dB, tail -120.0 dB
-  PASS  Preset 07 Power Arp                         peak -9.7 dB, tail -120.0 dB
-  PASS  Preset 08 Note Arpeggiator                  peak -7.5 dB, tail -120.0 dB
-  PASS  Preset 09 PWM Strings                       peak -2.3 dB, tail -120.0 dB
-  PASS  Preset 10 Spooky Triangle                   peak -12.7 dB, tail -120.0 dB
-  PASS  Preset 11 Metal Bells                       peak -11.5 dB, tail -120.0 dB
-  PASS  Preset 12 Lo-Fi Saw Buzz                    peak -15.0 dB, tail -120.0 dB
-  PASS  Preset 13 Drum Kit                          peak -10.3 dB, tail -120.0 dB
-  PASS  Preset 14 Crunchy Drums                     peak -10.2 dB, tail -120.0 dB
-  PASS  Preset 15 Coin Pickup                       peak -14.0 dB, tail -120.0 dB
-  PASS  Preset 16 Jump                              peak -14.1 dB, tail -120.0 dB
-  PASS  Preset 17 Laser Zap                         peak -11.1 dB, tail -120.0 dB
-  PASS  Preset 18 Power Up                          peak -14.4 dB, tail -120.0 dB
-  PASS  Preset 19 Explosion                         peak -12.3 dB, tail -120.0 dB
-  PASS  Preset 20 Wind & Waves                      peak -14.3 dB, tail -120.0 dB
+  PASS  Preset 02 Real NES Lead                     peak -9.7 dB, tail -120.0 dB
+  PASS  Preset 03 Thin Lead                         peak -9.7 dB, tail -120.0 dB
+  PASS  Preset 04 Triangle Bass                     peak -14.3 dB, tail -120.0 dB
+  PASS  Preset 05 Punchy Bass                       peak -13.5 dB, tail -120.0 dB
+  PASS  Preset 06 C64 Squelch Bass                  peak -12.2 dB, tail -120.0 dB
+  PASS  Preset 07 Major Chord Arp                   peak -11.1 dB, tail -120.0 dB
+  PASS  Preset 08 Minor Chord Arp                   peak -14.5 dB, tail -120.0 dB
+  PASS  Preset 09 Smart Chords                      peak -11.1 dB, tail -120.0 dB
+  PASS  Preset 10 Macro Chord Blip                  peak -9.7 dB, tail -120.0 dB
+  PASS  Preset 11 Macro Stutter Lead                peak -9.7 dB, tail -120.0 dB
+  PASS  Preset 12 Power Arp                         peak -9.7 dB, tail -120.0 dB
+  PASS  Preset 13 Note Arpeggiator                  peak -7.5 dB, tail -120.0 dB
+  PASS  Preset 14 PWM Strings                       peak -2.3 dB, tail -120.0 dB
+  PASS  Preset 15 Game Boy Wave                     peak -14.8 dB, tail -120.0 dB
+  PASS  Preset 16 Spooky Triangle                   peak -12.7 dB, tail -120.0 dB
+  PASS  Preset 17 Metal Bells                       peak -11.5 dB, tail -120.0 dB
+  PASS  Preset 18 Lo-Fi Saw Buzz                    peak -15.0 dB, tail -120.0 dB
+  PASS  Preset 19 Drum Kit                          peak -10.3 dB, tail -120.0 dB
+  PASS  Preset 20 Crunchy Drums                     peak -10.2 dB, tail -120.0 dB
+  PASS  Preset 21 Coin Pickup                       peak -14.0 dB, tail -120.0 dB
+  PASS  Preset 22 Jump                              peak -14.1 dB, tail -120.0 dB
+  PASS  Preset 23 Laser Zap                         peak -11.1 dB, tail -120.0 dB
+  PASS  Preset 24 Power Up                          peak -14.4 dB, tail -120.0 dB
+  PASS  Preset 25 Explosion                         peak -12.3 dB, tail -120.0 dB
+  PASS  Preset 26 Wind & Waves                      peak -14.3 dB, tail -120.0 dB
 
   -- tuning (autocorrelation pitch, tolerance +/- 8 cents) --
   PASS  Tuning: Square note 69                      440.16 Hz (expected 440.00, 0.61 cents)
@@ -38,6 +44,7 @@ plugin: C:\Claude\BitBuddy\build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
   PASS  Tuning: Triangle note 45                    109.99 Hz (expected 110.00, -0.17 cents)
   PASS  Tuning: Saw note 64                         329.56 Hz (expected 329.63, -0.36 cents)
   PASS  Tuning: Metal Noise note 69                 440.53 Hz (expected 440.00, 2.09 cents)
+  PASS  Tuning: Draw (sine) note 69                 440.38 Hz (expected 440.00, 1.49 cents)
   PASS  A4 at 48.00 kHz, block 64                   440.08 Hz
   PASS  A4 at 96.00 kHz, block 1024                 440.25 Hz
   PASS  A4 at 22.05 kHz, block 37                   440.24 Hz
@@ -46,15 +53,47 @@ plugin: C:\Claude\BitBuddy\build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
   -- arpeggiators --
   PASS  CHORD arp: one key -> C E G C E G           semitones: -0.0 4.0 7.0 -0.0 4.0 7.0 
   PASS  NOTES arp: C E G held, up & down, 2 octaves notes: 60 64 67 72 76 79 76 72 67 64 
+
+  -- scale lock + smart chords --
+  PASS  SCALE LOCK (C major): black keys snap to scale notes61->60.0 66->65.0 63->62.0 71->71.0 
+  PASS  SCALE LOCK (A minor penta): B -> C, F -> E  72.0, 64.0
+  PASS  SCALE LOCK: shared note holds until both keys are upheld -17.5 dB, tail -120.0 dB
+  PASS  SCALE LOCK: changing scale while holding a key -> no stuck notetail -120.0 dB
+  PASS  SMART chords (C major): Dm, Bdim, F         0.0 3.0 7.0 | 0.0 3.0 6.0 | 0.0 4.0 7.0 | 
+
+  -- console modes --
+  PASS  NES mode: A6 plays at the NES's own pitch (1747.8 Hz)1750.77 Hz
+  PASS  Console note limits: NES 2, Game Boy 2, C64 3, Modern all 5voices: 2 2 3 5 
+  PASS  NES triangle: on/off only (no fade), Modern fadesheld level NES 100%, Modern 14%
+
+  -- C64 filter --
+  PASS  FILTER LOW 600 Hz on A4 square: fizz cut    fizz 3.5% of dry
+  PASS  FILTER HIGH 2 kHz on A2 square: bass cut    level 11.7% of dry
+  PASS  FILTER ENV: opens on each note, then closes start/tail fizz x9.6, 2nd note x15.3, peak 0.246
+  PASS  FILTER max resonance + env + 8 notes: stable, below 0 dBFSpeak 0.6703
   PASS  MONO legato: A2 then E3                     110.0 Hz -> 164.8 Hz
 
   -- drum kit --
   PASS  All 12 drums sound and decay to silence     12/12 ok
   PASS  All-sound-off silences held notes           -120.0 dB after
-  PASS  Echo survives the silent gap after a note   gap -120 dB, echo -23.9 dB
+  PASS  Echo survives the silent gap after a note   gap -120 dB, echo -14.9 dB
   PASS  8-note chord at max volume stays below 0 dBFSpeak 0.9800
-  PASS  Tweaked preset survives save + reload       1576 bytes; wave 0.429/0.429 attack 0.420/0.420 echo 0.330/0.330, program Hero Lead
-  PASS  CPU: 8-voice chords for 60 s                111x faster than real time (0.90% of one core)
-  PASS  CPU: idle (loaded, no notes) for 60 s       3658x faster than real time (0.027% of one core)
+  PASS  Tweaked preset survives save + reload       2519 bytes; wave 0.375/0.375 attack 0.420/0.420 echo 0.330/0.330, program Hero Lead
+  PASS  CPU: 8-voice chords for 60 s                99x faster than real time (1.01% of one core)
+  PASS  CPU: idle (loaded, no notes) for 60 s       3756x faster than real time (0.027% of one core)
 
-  46 passed, 0 failed
+  -- my presets, dice, mutate --
+  PASS  MY PRESETS: save, reload (Key/Scale untouched), listedsaved, loaded, attack 0.50, echo 0.42, scale 5
+  PASS  MY PRESETS: test preset removed again       C:\Users\enigmanaut\AppData\Roaming\BitBuddy\Presets
+  PASS  DICE (shape): only the envelope changes, name gets *attack,decay,release,sustain | Hero Lead *
+  PASS  MUTATE: nudges many knobs a little, keeps wave/Key/Scale/volume22 params moved, biggest knob change 33% (3 mutates)
+  PASS  MACRO ARP: 0 then +7 then loops (60 steps/s)57.0 64.0 57.0
+  PASS  MACRO VOL: note cut to silence after 0.1 s (key still held)-14.4 dB -> -120.0 dB
+  PASS  MACRO DUTY: 12.5% vs 50% pulse width        up 13% vs 50%
+  PASS  MACROS: saved with project, cleared by plain presets, loaded by macro presetssaved, cleared, preset ok
+  PASS  JAM: bass follows the song (C major: C then G; A minor: A)36.0 43.0 45.0
+  PASS  JAM: all 4 styles play, stay below 0 dBFS, stop cleanlyAdventure -8.3 dB  Dungeon -8.3 dB  Racing -4.1 dB  Chill -8.3 dB  
+  PASS  RECORD: WAV (length, level) + MIDI (note at the right time)0.998 s, peak 0.500, 1 note at 0.1182 s (expected 0.1184)
+  PASS  DRAW: drawing saved in project + preset, preset drawings load, plays in tuneproject ok, preset ok, kept, GB ok, A4 = 440.38 Hz
+
+  77 passed, 0 failed

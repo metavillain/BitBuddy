@@ -1,16 +1,31 @@
-# Installs BitBuddy so every DAW can find it.
+# Installs BitBuddy (the app + the plugin) from your build.
 #
 #   Right-click this file (scripts\install-plugin.ps1) -> "Run with PowerShell"
-#   (Windows will ask for admin permission - click Yes.)
+#   (Windows will ask for admin permission once - click Yes.)
 #
-# It copies the built plugin into the standard system folder:
-#   C:\Program Files\Common Files\VST3\BitBuddy.vst3
-# and also into your personal plugin folder (no admin needed):
-#   %LOCALAPPDATA%\Programs\Common\VST3\BitBuddy.vst3
+# - the app:    %LOCALAPPDATA%\Programs\BitBuddy\BitBuddy.exe + a Start-menu shortcut (no admin)
+# - the plugin: your personal plugin folder %LOCALAPPDATA%\Programs\Common\VST3 (no admin)
+#               and the standard system folder C:\Program Files\Common Files\VST3 (admin)
 
 $ErrorActionPreference = 'Stop'
-$src = Join-Path (Split-Path $PSScriptRoot -Parent) 'build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3'
+$release = Join-Path (Split-Path $PSScriptRoot -Parent) 'build\BitBuddy_artefacts\Release'
+$src = Join-Path $release 'VST3\BitBuddy.vst3'
 if (-not (Test-Path $src)) { throw "Build the plugin first: $src not found" }
+
+# The app (no admin)
+$appSrc = Join-Path $release 'Standalone\BitBuddy.exe'
+if (Test-Path $appSrc) {
+    $appDir = Join-Path $env:LOCALAPPDATA 'Programs\BitBuddy'
+    New-Item -ItemType Directory -Force $appDir | Out-Null
+    Copy-Item -Force $appSrc $appDir
+    $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'BitBuddy.lnk'
+    $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
+    $link.TargetPath = Join-Path $appDir 'BitBuddy.exe'
+    $link.WorkingDirectory = $appDir
+    $link.Description = 'BitBuddy - easy chiptune synth'
+    $link.Save()
+    Write-Host "App installed:          $appDir\BitBuddy.exe (Start menu: BitBuddy)"
+}
 
 # Per-user folder (no admin)
 $userDir = Join-Path $env:LOCALAPPDATA 'Programs\Common\VST3'

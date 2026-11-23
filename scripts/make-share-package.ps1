@@ -107,6 +107,10 @@ then extract it. That avoids most Windows security pop-ups.
 - Hover over any knob - the bar at the bottom explains what it does.
 - Instant 8-bit chords: set section 3 to CHORD and hold just ONE key.
 - Drum Kit preset: every C is a kick, D a snare, F# a hi-hat.
+- No wrong notes: pick a KEY + SCALE LOCK (bottom right). JAM starts a backing band,
+  REC records you (WAV + MIDI, in Music\BitBuddy Recordings).
+- Draw your own wave (DRAW), or macros (MACROS) on the SCREEN. SAVE keeps your sounds.
+- Click BIT, the little chip at the top, to change the colours. VIEW hides / shows boxes.
 - Demo\ has a song made with BitBuddy, plus each part as a MIDI file to remix.
 - Beginners-Guide.md (open with Notepad) explains chiptune from scratch.
 

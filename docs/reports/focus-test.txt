@@ -2,6 +2,7 @@
 === Keyboard focus test ===
 
   PASS  Only the piano can take keyboard focus      ok
+  PASS  Boxes: hide (x button + VIEW), move, reset; window reshapes; layout savedheight 778 -> 660, window ratio 1.515 (1000x751), x ok, saved, moved, reset
   PASS  Keys work as soon as the window opens       
   PASS  Keys still work after clicking wave button (SAW)
   PASS  Simulated click selected the SAW wave       
@@ -11,4 +12,4 @@
   PASS  Keys still work after clicking SURPRISE ME! button
   PASS  Keys come back after a drop-down menu closesmenu opened + closed
 
-  9 passed, 0 failed
+  10 passed, 0 failed

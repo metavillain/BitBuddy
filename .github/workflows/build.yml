@@ -212,7 +212,7 @@ jobs:
   release:
     name: Publish the Release page
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, macos, android]
+    needs: [windows, macos, android, ios]   # publish only when every platform is green
     runs-on: ubuntu-latest
     permissions:
       contents: write

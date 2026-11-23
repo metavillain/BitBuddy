@@ -1,3 +1,13 @@
+## ✨ New in 1.1
+
+- **Scale Lock** + **Smart chords**: pick a key and scale, and every note (and chord) fits
+- **JAM**: a drums + bass + chords band in your key to play along with (BitBuddy app)
+- **REC**: record what you play as WAV + MIDI (BitBuddy app)
+- **DRAW your own wave** (Game Boy style) and **macros** (FamiTracker style) on the SCREEN
+- **C64 filter**, **NES / Game Boy / C64 chip modes**
+- **My Presets**, per-section **dice**, **MUTATE**
+- **BIT** the dancing mascot, 4 colour themes, and boxes you can hide and move (**VIEW**)
+
 ## 🎮 Download BitBuddy
 
 | Your computer | Download |
@@ -25,11 +35,12 @@ takes you from zero to your first chiptune song.
 
 - The **BitBuddy app** (plays on its own, no music software needed)
 - The **plugin** for music software: VST3 (Windows + Mac) and Audio Unit (Mac: GarageBand, Logic)
-- 21 presets, a demo song with MIDI parts to remix, and the full source code
+- 27 presets, a demo song with MIDI parts to remix, and the full source code
 
 ## Tested on every build
 
-46 automated audio tests (tuning, arpeggios, drums, presets, save/reload, CPU) ·
+77 automated audio tests (tuning, arpeggios, Scale Lock, filter, chip modes, macros, Jam, recording,
+presets, save/reload, CPU) + a UI test that clicks through the real window ·
 [pluginval](https://github.com/Tracktion/pluginval) at its strictest level ·
 Apple's `auval` Audio Unit validator on Mac.
 

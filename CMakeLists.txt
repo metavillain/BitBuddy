@@ -9,7 +9,7 @@ else()
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Oldest supported macOS")
 endif()
 
-project(BitBuddy VERSION 1.0.1 LANGUAGES C CXX)
+project(BitBuddy VERSION 1.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

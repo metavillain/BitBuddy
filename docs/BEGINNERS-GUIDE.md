@@ -128,6 +128,8 @@ your DAW.
    Jumping up an octave and back is a classic NES bass move.
 4. **Chords** (*Major/Minor Chord Arp*): hold ONE key per chord. A good first progression:
    **A minor → F → C → G** (use *Minor Chord Arp* for the A, *Major Chord Arp* for the others).
+   **Easier:** pick the *Smart Chords* preset, set **KEY = A** and **SCALE LOCK = Minor**, and just press
+   A, F, C, G: BitBuddy picks minor or major for you.
 5. **Melody** (*Hero Lead*): short notes, then a long note at the end of each phrase so the
    delayed vibrato can bloom.
 6. **Mix:** lead loudest, drums and bass next, chords quieter (lower BitBuddy's VOLUME).
@@ -139,7 +141,8 @@ your DAW.
 
 | Control | What it does |
 |---|---|
-| **Wave** | The raw sound: Square, Pulse 25%, Pulse 12.5%, Triangle, Saw, Noise, Metal Noise, Drum Kit |
+| **Wave** | The raw sound: Square, Pulse 25%, Pulse 12.5%, Triangle, Saw, Noise, Metal Noise, Drum Kit, **Draw** (your own) |
+| **Chip** | Modern (no limits), or behave like a real **NES**, **Game Boy** or **C64** |
 | **Attack / Decay / Sustain / Release** | Volume shape of each note: fade-in, drop, hold level, fade-out |
 | **Arp: Off / Chord / Notes** | Chord = one key plays a fast chord. Notes = held keys play as a pattern |
 | **Chord / Pattern / Speed / Octaves** | Which chord, what order, how fast (tempo-synced or 15/30/60 Hz), how wide |
@@ -150,7 +153,61 @@ your DAW.
 | **Bits / Rate** | Lo-fi crunch: fewer bits, lower sample rate |
 | **Echo / Time / Repeats** | Ping-pong echo, tempo-synced |
 | **Volume** | Output level. A gentle limiter stops loud chords from crackling |
+| **C64 Filter: Off / Low / Band / High, Cutoff, Reso, Env** | The squelchy Commodore 64 filter; Env makes it "wow" on every note |
+| **Key / Scale Lock** | Every key you press snaps into the scale: no wrong notes |
+| **Jam / Style / Tempo** (app) | A backing band (drums, bass, chords) in your key |
+| **Rec** (app) | Records a WAV (sound) + MIDI (notes) of what you play |
+| **Screen: Scope / Wave / Macros** | Watch the sound, draw your own wave, or draw macros |
+| **Save / Mutate / dice** | Keep your sound as a preset; nudge it; re-roll one section |
+| **View** | Show / hide boxes (drag a box's title to move it) |
 | **Mod wheel / Pitch bend / Sustain pedal** | All supported from a MIDI keyboard |
 
 Hover over any control in BitBuddy and the help bar at the bottom explains it.
 Double-click a knob to reset it.
+
+---
+
+## 6. New in 1.1: the fun stuff
+
+**No wrong notes (Scale Lock).** In the PLAY ALONG box (bottom right), pick a **KEY** (the song's home
+note; C is fine) and a **SCALE LOCK** (Major = happy, Minor = sad, Penta = can't miss, Dorian = adventure,
+Harm. Minor = spooky). Now every key you press snaps to a note that fits. The piano dims the notes that
+aren't in the scale and marks the home note pink.
+
+**Smart chords.** Set MAGIC CHORDS to **CHORD** and the chord type to **SMART**: every key plays the chord
+that belongs to it in your scale (in C major: C → C major, D → D minor, B → B diminished).
+
+**Jam with a band (BitBuddy app).** Press **JAM**: drums, bass and chords start playing in your key.
+Pick a style (Adventure, Dungeon, Racing, Chill) and a tempo, turn on Scale Lock, and make up a melody.
+Press **REC** to record it: you get a WAV file (send it to a friend!) and a MIDI file of your notes in
+*Music → BitBuddy Recordings* (press **SHOW** to open the folder; **SHARE** on phones).
+
+**Draw your own wave.** Pick the **DRAW** wave: the SCREEN turns into a drawing board. Click and drag to
+draw one cycle of the sound - 32 steps, 16 levels, exactly like the Game Boy's "wave channel". Smooth
+shapes sound soft, jagged shapes buzzy. SINE / TRI / SAW / SQR / RND give you a starting point.
+
+**Macros (like the music tracker FamiTracker).** Click **MACROS** on the SCREEN. A macro is a little
+pattern that plays from the start of every note, 60 steps a second:
+- **VOL**: the volume of each step: fade-outs, stutters, fake echoes.
+- **ARP**: notes added at each step: 0, 4, 7 looping is the classic NES chord.
+- **PITCH**: tiny bends: scoops into notes, warbles.
+- **DUTY**: the pulse width changing as the note plays.
+
+Turn a lane **ON**, draw bars, set **LEN** (how many steps), and click the strip at the bottom to make it
+loop from that step. Try the *Macro Chord Blip* and *Macro Stutter Lead* presets to see examples.
+
+**C64 filter.** Box 6 adds the Commodore 64's resonant filter. **LOW** + low **CUTOFF** + some **RESO**
++ **ENV** = rubbery "wow" basses (try the *C64 Squelch Bass* preset).
+
+**Chip modes.** The **CHIP** menu (top of box 1) makes BitBuddy behave like real hardware: the **NES** and
+**Game Boy** only play 2 notes at once, have 16 volume steps and their own slightly-off tuning; the NES
+triangle can't fade. It's how the old music really sounded (try *Real NES Lead*).
+
+**Your own presets, dice and MUTATE.** Press **SAVE** to keep a sound (it shows under MY PRESETS in the
+preset menu). The little **dice** on each box re-rolls just that part. **MUTATE** nudges every knob a
+little - press it a few times to let a sound evolve.
+
+**Make it yours.** Click **BIT** (the little chip next to VIEW - it dances when you play) to change the
+colours: Sweetie 16, Game Boy, Amber CRT or NES. Use **VIEW** to hide boxes you don't use, and drag a
+box by its title bar to move it. Hidden boxes keep working; VIEW tells you if one is still changing
+the sound.

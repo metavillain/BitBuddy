@@ -24,15 +24,23 @@ is quick and fun even if you've never made music before.
 
 ## Features
 
-- **8 chip sounds:** Square, Pulse 25%, Pulse 12.5%, 4-bit Triangle, Saw, LFSR Noise,
-  "Metal" short-mode noise (tuned to your keys), and a 12-piece synthesized **Drum Kit**
+- **9 chip sounds:** Square, Pulse 25%, Pulse 12.5%, 4-bit Triangle, Saw, LFSR Noise,
+  "Metal" short-mode noise (tuned to your keys), a 12-piece synthesized **Drum Kit**, and **DRAW**:
+  draw your own 32-step, 4-bit wave like the Game Boy's wave channel
+- **Chip modes:** Modern, or real **NES / Game Boy / C64** behaviour (note limits, 4-bit volume steps,
+  the chips' own pitch tables, on/off NES triangle, 16-speed NES noise, output tone)
 - **Magic Chords:** hold one key to get the classic fast-arpeggio chiptune chord
-  (9 chord types, 5 patterns, tempo-synced or 15/30/60 Hz "frame rate" speeds),
+  (9 chord types + **SMART** chords that follow your key, 5 patterns, tempo-synced or 15/30/60 Hz),
   plus a held-notes arpeggiator
+- **Scale Lock:** pick a key + scale (8 scales) and every note you play fits; the piano shows the scale
+- **Instrument macros** (FamiTracker style): VOL / ARP / PITCH / DUTY step sequences at 60 steps/s with loops
+- **C64 filter:** resonant low / band / high pass with a per-note envelope
 - **Movement:** delayed vibrato, pitch sweeps (lasers, jumps, kicks), PWM, glide, mono/poly
 - **Crunch + Echo:** bit depth, sample-rate reduction, tempo-synced ping-pong echo
-- **21 presets**, including leads, bass, chords, drums and sound effects (Coin, Jump, Laser, Power Up, Explosion)
-- **SURPRISE ME!** button for random-but-musical sounds
+- **27 presets**, including leads, bass, chords, drums, sound effects, and demos of every 1.1 feature
+- **My Presets** (save your own), **SURPRISE ME!**, per-section **dice** and **MUTATE**
+- **In the app:** **JAM** (a drums + bass + chords band in your key, 4 styles) and **REC** (WAV + MIDI)
+- **Your layout:** hide boxes, drag them around (**VIEW** menu), 4 colour themes, and BIT the dancing mascot
 - **Built-in help:** hover any control for a plain-English explanation; a numbered 1–5 layout walks you through making a sound
 - Live waveform "screen", on-screen keyboard, and computer-keyboard playing that stays active while you
   tweak knobs (a **KEYS ON** indicator shows when your letter keys are playing)
@@ -88,8 +96,8 @@ That one script builds everything (Release) and runs every check, writing report
 
 | Check | What it proves |
 |---|---|
-| Audio tests (`test-results.txt`) | 46 tests that load the real VST3 like a DAW: tuning, arpeggiators, drums, presets, save/restore, echo tails, limiter, CPU |
-| Focus test (`focus-test.txt`) | opens a real window, simulates clicks, checks your computer keys keep playing |
+| Audio tests (`test-results.txt`) | 77 tests that load the real VST3 like a DAW: tuning, arpeggiators, drums, presets, save/restore, echo tails, limiter, Scale Lock, Smart chords, filter, chip modes, macros, drawn waves, Jam band, recording, My Presets, CPU |
+| Focus + layout test (`focus-test.txt`) | opens a real window, simulates clicks, checks your computer keys keep playing; hides, moves and resets boxes |
 | Benchmark (`benchmark.txt`) | CPU cost of chords, a lead, drums and idle |
 | [pluginval](https://github.com/Tracktion/pluginval) (`pluginval.txt`) | industry plugin validator at strictness level 10 |
 
@@ -108,13 +116,16 @@ Re-render the demo song and MIDI parts:
 
 ```
 src/            the plugin
-  ChipEngine.*        the sound chip: oscillators, LFSR noise, arpeggiators, drums
-  Effects.h           crunch (bit/rate reduction), ping-pong echo, DC blocker
+  ChipEngine.*        the sound chip: oscillators, LFSR noise, arpeggiators, drums, macros, chip modes
+  Scales.h            scales, Scale Lock snapping, Smart-chord triads
+  Effects.h           C64 filter, console tone, crunch, ping-pong echo, DC blocker
+  JamBand.*           the JAM backing band (3 more chip engines + a step sequencer)
+  Recorder.*          REC: WAV + MIDI recording on a background thread
   Parameters.*        every knob the DAW can see and automate
-  Presets.*           the 21 factory presets
-  PluginProcessor.*   glue between the DAW, MIDI and the engine; save/load
-  PluginEditor.*      the UI (sections 1-5, scope, keyboard, help)
-  RetroLookAndFeel.*  pixel font, palette, LED knobs
+  Presets.*           the 27 factory presets
+  PluginProcessor.*   glue between the DAW, MIDI and the engine; save/load; My Presets
+  PluginEditor.*      the UI (boxes, screen editors, keyboard, help, BIT, layout)
+  RetroLookAndFeel.*  pixel font, colour themes, LED knobs, settings file
 tests/TestHost.cpp  automated tests, benchmark, demo renderer, UI snapshots
 scripts/            build-and-test, install-plugin, make-share-package
 assets/             pixel font + its license
