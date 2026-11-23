@@ -20,7 +20,80 @@ juce::Font textFont (float height, bool bold)
     return juce::Font (juce::FontOptions (height, bold ? juce::Font::bold : juce::Font::plain));
 }
 
+//==============================================================================
+namespace
+{
+struct Theme
+{
+    const char* name;
+    juce::uint32 bg, purple, red, orange, yellow, lime, green, teal, navy, blue, sky, cyan, white, light, grey, dark, pink, screen;
+};
+
+const Theme kThemes[kNumThemes] = {
+    // Sweetie 16 by GrafxKid: the default
+    { "Sweetie 16", 0xff1a1c2c, 0xff5d275d, 0xffb13e53, 0xffef7d57, 0xffffcd75, 0xffa7f070, 0xff38b764, 0xff257179,
+      0xff29366f, 0xff3b5dc9, 0xff41a6f6, 0xff73eff7, 0xfff4f4f4, 0xff94b0c2, 0xff566c86, 0xff333c57, 0xfff49ac1, 0xff0b1a14 },
+    // The original Game Boy screen: four shades of pea-soup green (plus a few in between)
+    { "Game Boy",   0xff0f380f, 0xff306230, 0xff6b8c0f, 0xff8bac0f, 0xffc4d84a, 0xffa8c820, 0xff6b9a18, 0xff4a7a20,
+      0xff255c25, 0xff4f7f1f, 0xff8bac0f, 0xff9bbc0f, 0xffe0f0c0, 0xff9bbc0f, 0xff306230, 0xff1e4d1e, 0xffb8d060, 0xff0b2a0b },
+    // An old amber monitor
+    { "Amber CRT",  0xff120a00, 0xff4a2800, 0xffb85000, 0xffff9a20, 0xffffc040, 0xffffb030, 0xffe08a10, 0xff5a3400,
+      0xff3a2000, 0xff8a5000, 0xffffa828, 0xffffd070, 0xffffe8c0, 0xffc88a40, 0xff6a4000, 0xff2a1600, 0xffffb870, 0xff0a0500 },
+    // The grey-and-red console
+    { "NES",        0xff1c1c1c, 0xff5a1a2a, 0xffc01818, 0xffe04848, 0xffe8c070, 0xffd8d8d8, 0xffa8a8a8, 0xff3a5a6a,
+      0xff2a2a3a, 0xff4060a0, 0xff8090c0, 0xffc0c8d8, 0xfff4f4f4, 0xffa0a0a0, 0xff6a6a6a, 0xff3a3a3a, 0xffe06060, 0xff101820 },
+};
+
+int themeNow = 0;
+bool chosen = false;
+} // namespace
+
+const char* themeName (int theme) { return kThemes[juce::jlimit (0, kNumThemes - 1, theme)].name; }
+int currentTheme() { return themeNow; }
+bool themeChosen() { return chosen; }
+
+void applyTheme (int theme)
+{
+    chosen = true;
+    themeNow = juce::jlimit (0, kNumThemes - 1, theme);
+    const auto& t = kThemes[themeNow];
+    pal::bg = juce::Colour (t.bg);         pal::purple = juce::Colour (t.purple); pal::red = juce::Colour (t.red);
+    pal::orange = juce::Colour (t.orange); pal::yellow = juce::Colour (t.yellow); pal::lime = juce::Colour (t.lime);
+    pal::green = juce::Colour (t.green);   pal::teal = juce::Colour (t.teal);     pal::navy = juce::Colour (t.navy);
+    pal::blue = juce::Colour (t.blue);     pal::sky = juce::Colour (t.sky);       pal::cyan = juce::Colour (t.cyan);
+    pal::white = juce::Colour (t.white);   pal::light = juce::Colour (t.light);   pal::grey = juce::Colour (t.grey);
+    pal::dark = juce::Colour (t.dark);     pal::pink = juce::Colour (t.pink);     pal::screen = juce::Colour (t.screen);
+}
+
+static std::unique_ptr<juce::PropertiesFile> openSettings()
+{
+    juce::PropertiesFile::Options options;
+    options.applicationName = "BitBuddy";
+    options.filenameSuffix = "settings";
+    options.folderName = "BitBuddy";
+    options.osxLibrarySubFolder = "Application Support";
+    return std::make_unique<juce::PropertiesFile> (options);
+}
+
+int loadThemeSetting()
+{
+    return juce::jlimit (0, kNumThemes - 1, openSettings()->getIntValue ("theme", 0));
+}
+
+void saveThemeSetting (int theme)
+{
+    auto settings = openSettings();
+    settings->setValue ("theme", theme);
+    settings->saveIfNeeded();
+}
+
+//==============================================================================
 RetroLookAndFeel::RetroLookAndFeel()
+{
+    applyPaletteColours();
+}
+
+void RetroLookAndFeel::applyPaletteColours()
 {
     setColour (juce::ResizableWindow::backgroundColourId, pal::bg);
 

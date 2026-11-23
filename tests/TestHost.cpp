@@ -1305,7 +1305,8 @@ static int runSnapshot (const File& outDir)
 
     // key: 0 = C ... 11 = B;  scale: 0 = Scale Lock off, 4 = minor pentatonic
     struct Shot { const char* preset; std::vector<int> notes; const char* file; bool help; int key = 0, scale = 0;
-                  const char* click = nullptr; };   // a button to press before the picture
+                  const char* click = nullptr;   // a button to press before the picture
+                  int theme = 0; };
     const Shot shots[] = {
         { "Hero Lead",       { 69 },         "ui-hero-lead.png",   false },
         { "Major Chord Arp", { 60 },         "ui-chord-arp.png",   false },
@@ -1313,6 +1314,9 @@ static int runSnapshot (const File& outDir)
         { "C64 Squelch Bass", { 40 },        "ui-filter.png",      false },
         { "Game Boy Wave",   { 69 },         "ui-draw-wave.png",   false },
         { "Macro Stutter Lead", { 69 },      "ui-macros.png",      false, 0, 0, "MACROS" },
+        { "Real NES Lead",   { 69 },         "ui-theme-gameboy.png", false, 0, 0, nullptr, 1 },
+        { "C64 Squelch Bass", { 40 },        "ui-theme-amber.png", false, 0, 0, nullptr, 2 },
+        { "Real NES Lead",   { 69 },         "ui-theme-nes.png",   false, 0, 0, nullptr, 3 },
         { "Drum Kit",        { 36, 42 },     "ui-drum-kit.png",    false },
         { "Classic Square",  {},             "ui-help.png",        true  },
     };
@@ -1335,6 +1339,7 @@ static int runSnapshot (const File& outDir)
             proc.processBlock (buf, midi);
         }
 
+        bb::applyTheme (shot.theme);   // (doesn't touch your saved theme)
         std::unique_ptr<AudioProcessorEditor> editor (proc.createEditor());
         editor->setVisible (true);
         if (shot.help)

@@ -238,6 +238,26 @@ private:
 };
 
 //==============================================================================
+/** BIT, the BitBuddy mascot: a little pixel microchip that bounces when you play,
+    dances when the JAM band plays, and changes the colour theme when clicked. */
+class Mascot : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    Mascot();
+    void update (float outputLevel, bool jamming, double bpm);   // ~30 times a second
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+
+    std::function<void()> onClick;
+
+private:
+    float level = 0.0f, jump = 0.0f;
+    int frame = 0, lastLook = -1;
+    bool jamming = false;
+    double beat = 0.0;
+};
+
+//==============================================================================
 class HelpOverlay : public juce::Component
 {
 public:
@@ -287,6 +307,8 @@ private:
     juce::AudioProcessorValueTreeState& state;
 
     // header
+    Mascot mascot;
+    void showThemeMenu();
     juce::TextButton helpButton { "? HELP" };
     juce::TextButton prevButton { "<" }, nextButton { ">" };
     juce::TextButton saveButton { "SAVE" }, mutateButton { "MUTATE" };
@@ -376,7 +398,7 @@ private:
 } // namespace bb
 
 //==============================================================================
-class BitBuddyEditor : public juce::AudioProcessorEditor
+class BitBuddyEditor : public juce::AudioProcessorEditor, private juce::ChangeListener
 {
 public:
     explicit BitBuddyEditor (BitBuddyProcessor&);
@@ -386,7 +408,11 @@ public:
     void resized() override;
 
 private:
+    void changeListenerCallback (juce::ChangeBroadcaster*) override;   // colour theme changed: rebuild in the new colours
+
+    BitBuddyProcessor& bitBuddy;
     bb::RetroLookAndFeel lnf;
+    juce::SharedResourcePointer<bb::ThemeEvents> themeEvents;
     std::unique_ptr<bb::MainPanel> panel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BitBuddyEditor)

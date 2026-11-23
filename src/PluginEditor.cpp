@@ -407,7 +407,7 @@ WaveDrawer::WaveDrawer (BitBuddyProcessor& p) : proc (p)
     {
         auto* b = shapeButtons.add (new juce::TextButton (names[i]));
         b->setTooltip (hints[i]);
-        b->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff0b1a14));
+        b->setColour (juce::TextButton::buttonColourId, pal::screen);
         b->setColour (juce::TextButton::textColourOffId, pal::lime);
         b->onClick = [this, i] { applyShape (i); };
         addAndMakeVisible (b);
@@ -439,7 +439,7 @@ void WaveDrawer::refresh()
 void WaveDrawer::paint (juce::Graphics& g)
 {
     const auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff0b1a14));
+    g.setColour (pal::screen);
     g.fillRect (r);
 
     const auto grid = gridArea();
@@ -548,7 +548,7 @@ void WaveDrawer::applyShape (int shape)
 //==============================================================================
 namespace
 {
-const juce::Colour kLaneColours[kNumMacroLanes] = { pal::lime, pal::cyan, pal::orange, pal::yellow };
+juce::Colour laneColour (int lane) { const juce::Colour c[kNumMacroLanes] = { pal::lime, pal::cyan, pal::orange, pal::yellow }; return c[juce::jlimit (0, kNumMacroLanes - 1, lane)]; }
 const char* const kLaneHints[kNumMacroLanes] = {
     "VOL macro: the volume of each step (0-15). Fades, stutters and fake echoes - draw it going down for a 'pluck'.",
     "ARP macro: semitones added to the note at each step. 0,4,7 looping = the classic NES chord; big jumps = blips and coins.",
@@ -566,7 +566,7 @@ MacroEditor::MacroEditor (BitBuddyProcessor& p) : proc (p)
     {
         auto* b = laneButtons.add (new juce::TextButton (kMacroLanes[i].name));
         b->setTooltip (kLaneHints[i]);
-        b->setColour (juce::TextButton::buttonOnColourId, kLaneColours[i]);
+        b->setColour (juce::TextButton::buttonOnColourId, laneColour (i));
         b->onClick = [this, i] { selectLane (i); };
         addAndMakeVisible (b);
     }
@@ -596,7 +596,7 @@ MacroEditor::MacroEditor (BitBuddyProcessor& p) : proc (p)
 
     for (auto* b : { &onButton, &minusButton, &plusButton, &clearButton })
     {
-        b->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff0b1a14));
+        b->setColour (juce::TextButton::buttonColourId, pal::screen);
         b->setColour (juce::TextButton::textColourOffId, pal::white);
     }
     selectLane (0);
@@ -646,12 +646,12 @@ void MacroEditor::updateButtons()
     {
         laneButtons[i]->setToggleState (i == lane, juce::dontSendNotification);
         laneButtons[i]->setColour (juce::TextButton::buttonColourId,
-                                   shown[(size_t) i].isOn() ? kLaneColours[i].withAlpha (0.35f) : juce::Colour (0xff0b1a14));
-        laneButtons[i]->setColour (juce::TextButton::textColourOffId, kLaneColours[i]);
+                                   shown[(size_t) i].isOn() ? laneColour (i).withAlpha (0.35f) : pal::screen);
+        laneButtons[i]->setColour (juce::TextButton::textColourOffId, laneColour (i));
     }
     const auto& m = shown[(size_t) lane];
     onButton.setButtonText (m.isOn() ? "ON" : "OFF");
-    onButton.setColour (juce::TextButton::buttonColourId, m.isOn() ? kLaneColours[lane].withAlpha (0.6f) : juce::Colour (0xff0b1a14));
+    onButton.setColour (juce::TextButton::buttonColourId, m.isOn() ? laneColour (lane).withAlpha (0.6f) : pal::screen);
     lengthLabel.setText ("LEN " + juce::String (m.isOn() ? m.length : 0), juce::dontSendNotification);
 }
 
@@ -689,12 +689,12 @@ void MacroEditor::setLength (int newLength)
 void MacroEditor::paint (juce::Graphics& g)
 {
     const auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff0b1a14));
+    g.setColour (pal::screen);
     g.fillRect (r);
 
     const auto& info = kMacroLanes[lane];
     const auto& m = shown[(size_t) lane];
-    const auto colour = kLaneColours[lane];
+    const auto colour = laneColour (lane);
     const auto grid = gridArea();
     const float colW = grid.getWidth() / kMacroSteps;
     const float range = (float) (info.maxValue - info.minValue);
@@ -837,7 +837,7 @@ void Scope::refresh()
 void Scope::paint (juce::Graphics& g)
 {
     const auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff0b1a14));
+    g.setColour (pal::screen);
     g.fillRect (r);
 
     g.setColour (pal::green.withAlpha (0.12f));
@@ -1104,6 +1104,100 @@ void ChipKeyboard::resized()
 }
 
 //==============================================================================
+Mascot::Mascot()
+{
+    setTooltip ("BIT: your BitBuddy! Bounces when you play and dances with the JAM band. Click BIT to change BitBuddy's colours.");
+    setRepaintsOnMouseActivity (false);
+}
+
+void Mascot::update (float outputLevel, bool isJamming, double bpm)
+{
+    level = juce::jmax (level * 0.85f, juce::jlimit (0.0f, 1.0f, outputLevel * 2.5f));
+    jump *= 0.8f;
+    jamming = isJamming;
+    beat += bpm / 60.0 / 30.0;   // ~30 updates a second
+    ++frame;
+
+    // Only repaint when the picture actually changes (BIT sitting still costs nothing)
+    const int look = juce::roundToInt (jump * 2.0f) + 16 * juce::roundToInt (level * 8.0f)
+                   + 256 * ((frame % 100) < 4 ? 1 : 0) + 512 * ((int) (frame / 90) % 2)
+                   + 1024 * (jamming ? 1 + (int) std::fmod (beat * 2.0, 4.0) : 0);
+    if (look != lastLook)
+    {
+        lastLook = look;
+        repaint();
+    }
+}
+
+void Mascot::mouseDown (const juce::MouseEvent&)
+{
+    jump = 5.0f;
+    if (onClick != nullptr)
+        onClick();
+}
+
+void Mascot::paint (juce::Graphics& g)
+{
+    // A 16 x 16 pixel sprite, 3 screen pixels per sprite pixel
+    const float u = juce::jmin ((float) getWidth(), (float) getHeight()) / 16.0f;
+    const float lift = jump + (level > 0.02f ? level * 2.0f : 0.0f) + (jamming && std::fmod (beat, 1.0) < 0.5 ? 1.0f : 0.0f);
+    auto px = [&] (float x, float y, float w, float h, juce::Colour c)
+    {
+        g.setColour (c);
+        g.fillRect (x * u, (y - lift) * u + u, w * u, h * u);
+    };
+
+    const bool happy = level > 0.08f || jamming || jump > 0.5f;
+    const bool blink = (frame % 100) < 4 && ! happy;
+    const bool leftUp = jamming ? std::fmod (beat, 2.0) < 1.0 : happy;
+    const bool rightUp = jamming ? ! leftUp : happy;
+
+    // feet (they tap when dancing)
+    const float tapL = jamming && std::fmod (beat, 1.0) < 0.5 ? -1.0f : 0.0f;
+    px (4, 13 + tapL, 2, 2, pal::light);
+    px (10, 13 - tapL - (jamming ? 1.0f : 0.0f), 2, 2, pal::light);
+
+    // arms = the chip's pins
+    px (0, leftUp ? 3.0f : 7.0f, 2, 1, pal::light);
+    px (1, leftUp ? 4.0f : 8.0f, 1, 3, pal::light);
+    px (14, rightUp ? 3.0f : 7.0f, 2, 1, pal::light);
+    px (14, rightUp ? 4.0f : 8.0f, 1, 3, pal::light);
+
+    // body: a little microchip with its notch
+    px (2, 3, 12, 10, pal::bg);
+    px (3, 4, 10, 8, pal::sky);
+    px (7, 4, 2, 1, pal::bg);
+
+    // eyes
+    if (blink)
+    {
+        px (5, 7, 2, 1, pal::bg);
+        px (9, 7, 2, 1, pal::bg);
+    }
+    else
+    {
+        px (5, 6, 2, 2, pal::white);
+        px (9, 6, 2, 2, pal::white);
+        const float look = happy ? 0.0f : (float) ((frame / 90) % 2);   // glances left and right now and then
+        px (5 + look, 7, 1, 1, pal::bg);
+        px (9 + look, 7, 1, 1, pal::bg);
+    }
+
+    // cheeks + mouth
+    px (4, 9, 1, 1, pal::pink);
+    px (11, 9, 1, 1, pal::pink);
+    if (happy)
+    {
+        px (6, 9, 4, 2, pal::bg);
+        px (7, 10, 2, 1, pal::red);
+    }
+    else
+    {
+        px (6, 10, 4, 1, pal::bg);
+    }
+}
+
+//==============================================================================
 HelpOverlay::HelpOverlay()
 {
     closeButton.setColour (juce::TextButton::buttonColourId, pal::purple);
@@ -1203,6 +1297,9 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
       keyboard (p.keyboardState)
 {
     // --- header ---
+    mascot.onClick = [this] { showThemeMenu(); };
+    addAndMakeVisible (mascot);
+
     helpButton.setTooltip ("HELP: a quick guide to making 8-bit music with BitBuddy.");
     helpButton.setColour (juce::TextButton::buttonColourId, pal::teal);
     helpButton.onClick = [this] { help.setVisible (true); help.toFront (false); };
@@ -1579,6 +1676,7 @@ void MainPanel::paint (juce::Graphics& g)
 void MainPanel::resized()
 {
     helpButton.setBounds (240, 12, 92, 30);
+    mascot.setBounds (376, 4, 48, 52);
     prevButton.setBounds (430, 12, 30, 30);
     presetBox.setBounds (464, 12, 206, 28);
     nextButton.setBounds (674, 12, 30, 30);
@@ -1674,6 +1772,14 @@ void MainPanel::timerCallback()
     envelopeView.refresh();
     filterBox.refresh();
 
+    // BIT bounces to the music (peak of the last ~10 ms) and dances with the band
+    std::array<float, 512> recent {};
+    proc.scope.copyLatest (recent.data(), (int) recent.size());
+    float peak = 0.0f;
+    for (auto s : recent)
+        peak = juce::jmax (peak, std::abs (s));
+    mascot.update (peak, proc.isJamOn(), proc.getJamTempo());
+
     const int wave = juce::jlimit (0, kNumWaves - 1, juce::roundToInt (state.getRawParameterValue (ids::wave)->load()));
     if (wave != lastWave)
     {
@@ -1718,6 +1824,23 @@ void MainPanel::timerCallback()
         focusKeyboard();
 
     updateKeysStatus();
+}
+
+void MainPanel::showThemeMenu()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("COLOUR THEME");
+    for (int i = 0; i < kNumThemes; ++i)
+        menu.addItem (i + 1, juce::String (themeName (i)).toUpperCase(), true, i == currentTheme());
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&mascot), [] (int result)
+    {
+        if (result <= 0 || result - 1 == currentTheme())
+            return;
+        applyTheme (result - 1);
+        saveThemeSetting (result - 1);
+        juce::SharedResourcePointer<ThemeEvents>()->sendChangeMessage();   // every open BitBuddy repaints
+    });
 }
 
 void MainPanel::updateJamControls()
@@ -1950,8 +2073,13 @@ void MainPanel::showHintFor (juce::Component* c)
 
 //==============================================================================
 BitBuddyEditor::BitBuddyEditor (BitBuddyProcessor& p)
-    : AudioProcessorEditor (&p)
+    : AudioProcessorEditor (&p), bitBuddy (p)
 {
+    if (! bb::themeChosen())
+        bb::applyTheme (bb::loadThemeSetting());   // the first BitBuddy window opened: use your saved theme
+    lnf.applyPaletteColours();
+    themeEvents->addChangeListener (this);
+
     panel = std::make_unique<bb::MainPanel> (p, lnf);
     addAndMakeVisible (*panel);
 
@@ -1965,7 +2093,18 @@ BitBuddyEditor::BitBuddyEditor (BitBuddyProcessor& p)
 
 BitBuddyEditor::~BitBuddyEditor()
 {
+    themeEvents->removeChangeListener (this);
     panel.reset();
+}
+
+void BitBuddyEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    lnf.applyPaletteColours();
+    panel.reset();
+    panel = std::make_unique<bb::MainPanel> (bitBuddy, lnf);
+    addAndMakeVisible (*panel);
+    resized();
+    repaint();
 }
 
 void BitBuddyEditor::paint (juce::Graphics& g)
