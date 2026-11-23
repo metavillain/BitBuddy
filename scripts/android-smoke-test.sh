@@ -10,7 +10,15 @@ pkg="com.bitbuddylabs.bitbuddy"
 
 adb install -r "$apk"
 adb logcat -c
-adb shell am start -W -n "$pkg/com.rmsl.juce.JuceActivity"
+
+# Ask Android which activity launches the app (its class name differs between JUCE versions)
+activity="$(adb shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER "$pkg" | tr -d '\r' | tail -1)"
+echo "Launching $activity"
+case "$activity" in
+    */*) ;;
+    *) echo "FAIL: no launcher activity found for $pkg"; exit 1 ;;
+esac
+adb shell am start -W -n "$activity"
 sleep 15
 
 mkdir -p dist
@@ -19,7 +27,7 @@ adb exec-out screencap -p > dist/android-screenshot.png
 if adb shell pidof "$pkg" > /dev/null; then
     echo "PASS: BitBuddy is running on Android"
 else
-    echo "FAIL: BitBuddy crashed or quit. Last log lines:"
-    adb logcat -d | tail -200
+    echo "FAIL: BitBuddy crashed or quit. Crash / BitBuddy log lines:"
+    adb logcat -d | grep -E "AndroidRuntime|DEBUG|libc|juce|JUCE|bitbuddy|BitBuddy" | tail -120 || true
     exit 1
 fi

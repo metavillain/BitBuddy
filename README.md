@@ -1,4 +1,4 @@
-# BitBuddy – an easy, fun chiptune synth (Windows + Mac)
+# BitBuddy – an easy, fun chiptune synth (Windows, Mac, Android)
 
 [![Build](https://github.com/metavillain/BitBuddy/actions/workflows/build.yml/badge.svg)](https://github.com/metavillain/BitBuddy/actions/workflows/build.yml)
 
@@ -12,6 +12,13 @@ is quick and fun even if you've never made music before.
 
 **[Get the latest version](https://github.com/metavillain/BitBuddy/releases/latest)**: pick the
 **Windows** or **macOS** zip, unzip it, and open *READ ME FIRST.txt*. No other software needed.
+
+| Platform | What you get | Status |
+|---|---|---|
+| **Windows** 10 / 11 | app + VST3 plugin | ✅ download |
+| **Mac** (Apple Silicon + Intel, macOS 10.13+) | app + Audio Unit + VST3 | ✅ download |
+| **Android** 7.0+ phone / tablet | app (`.apk`) | ✅ download |
+| **iPhone / iPad** | app + AUv3 (GarageBand, AUM…) | 🧪 builds and runs in the iPad simulator; sharing it needs a paid Apple Developer account |
 
 **New to all this?** Start with the **[Beginner's Guide](docs/BEGINNERS-GUIDE.md)**.
 
@@ -48,8 +55,9 @@ and any other DAW that supports VST3 or Audio Unit instruments.
 
 ## Releases (how the downloads are made)
 
-Every push to `main` builds and tests Windows and macOS on GitHub Actions
-([workflow](.github/workflows/build.yml)). Pushing a version tag publishes a Release page with both zips:
+Every push to `main` builds and tests Windows, macOS, Android (APK + emulator launch test) and iOS
+(iPad simulator launch test) on GitHub Actions ([workflow](.github/workflows/build.yml)).
+Pushing a version tag publishes a Release page with the Windows and Mac zips and the Android APK:
 
 ```powershell
 git tag v1.0.2

@@ -145,6 +145,10 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
 - **A `.jucer` sharing CMake-style sources needs `useAppConfig="0"`.** CMake-style code includes JUCE modules
   directly; with the default AppConfig.h every file fails with *"No global header file was included!"*.
   `useAppConfig="0"` passes the same settings as compiler definitions, exactly like CMake.
+- **Don't hard-code the Android launch activity** (`com.rmsl.juce.JuceActivity` doesn't exist in JUCE 8):
+  ask `adb shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER <pkg>`.
+- **JUCE CMake artefacts don't follow Xcode's paths:** the iOS app is in
+  `build-ios/BitBuddy_artefacts/<config>/Standalone/BitBuddy.app` (no `iphonesimulator` in the path).
 - **macOS runners can fail to start** ("not acquired by Runner … even after multiple attempts" = GitHub
   capacity, not your code). Just re-run; check the job's annotations before debugging anything.
 - **Projucer's Android defaults request INTERNET, READ_MEDIA_*, storage and notification permissions.**

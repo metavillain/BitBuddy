@@ -6,7 +6,8 @@
 set -euo pipefail
 
 bundle_id="com.bitbuddylabs.bitbuddy"
-app="$(find build-ios -path '*iphonesimulator*' -name 'BitBuddy.app' -type d | head -1)"
+# JUCE puts it in build-ios/BitBuddy_artefacts/<config>/Standalone/ (the AUv3 lives inside it)
+app="$(find build-ios -path '*Standalone*' -name 'BitBuddy.app' -type d -not -path '*/PlugIns/*' | head -1)"
 [ -n "$app" ] || { echo "FAIL: no simulator BitBuddy.app found in build-ios"; exit 1; }
 echo "App: $app"
 
