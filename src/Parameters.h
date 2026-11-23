@@ -32,6 +32,10 @@ inline constexpr const char* echoFeedback = "echoFeedback";
 inline constexpr const char* volume       = "volume";
 inline constexpr const char* scaleKey     = "scaleKey";
 inline constexpr const char* scale        = "scale";
+inline constexpr const char* filterType   = "filterType";
+inline constexpr const char* filterCutoff = "filterCutoff";
+inline constexpr const char* filterReso   = "filterReso";
+inline constexpr const char* filterEnv    = "filterEnv";
 } // namespace bb::ids
 
 namespace bb
@@ -45,6 +49,7 @@ juce::StringArray echoTimeNames();
 juce::StringArray voiceModeNames();
 juce::StringArray keyNames();
 juce::StringArray scaleNames();
+juce::StringArray filterTypeNames();
 
 /** Chord type index of "Smart" (follows Key + Scale) in arpChordNames(). */
 inline constexpr int kSmartChordIndex = 9;

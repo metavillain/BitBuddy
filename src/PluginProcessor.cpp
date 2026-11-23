@@ -47,6 +47,10 @@ BitBuddyProcessor::BitBuddyProcessor()
     pVolume       = get (bb::ids::volume);
     pScaleKey     = get (bb::ids::scaleKey);
     pScale        = get (bb::ids::scale);
+    pFilterType   = get (bb::ids::filterType);
+    pFilterCutoff = get (bb::ids::filterCutoff);
+    pFilterReso   = get (bb::ids::filterReso);
+    pFilterEnv    = get (bb::ids::filterEnv);
 }
 
 //==============================================================================
@@ -64,9 +68,10 @@ void BitBuddyProcessor::prepareToPlay (double sampleRate, int)
     engine.prepare (sampleRate);
     crusher.prepare (sampleRate);
     echo.prepare (sampleRate);
+    filter.prepare (sampleRate);
     dcBlocker.reset();
     effectsIdle = true;
-    echoWasOn = false;
+    echoWasOn = filterWasOn = false;
     quietSamples = 0;
 
     outputGain.reset (sampleRate, 0.02);
@@ -120,6 +125,8 @@ void BitBuddyProcessor::updateEngineParams()
     engine.setParams (ep);
 
     crusher.setParams ((int) std::lround (pBits->load()), pRate->load());
+    filter.setParams (idx (pFilterType, 3), pFilterCutoff->load(), pFilterReso->load(), pFilterEnv->load(),
+                      pDecay->load());   // the filter envelope closes over the same DECAY time as the volume
 
     static constexpr double echoBeats[] = { 0.25, 0.5, 0.75, 1.0, 1.5, 2.0 };
     echo.setTimeSeconds (juce::jmin (2.4, echoBeats[idx (pEchoTime, 5)] * secondsPerBeat));
@@ -169,6 +176,7 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     float* mono = buffer.getWritePointer (0);
     bool engineActive = false;
     int pos = 0;
+    numFilterTriggers = 0;
     for (const auto meta : midi)
     {
         const int eventPos = juce::jlimit (0, numSamples, meta.samplePosition);
@@ -177,7 +185,10 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             engineActive = engine.render (mono + pos, eventPos - pos) || engineActive;
             pos = eventPos;
         }
-        handleMidi (meta.getMessage());
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn() && numFilterTriggers < (int) filterTriggers.size())
+            filterTriggers[(size_t) numFilterTriggers++] = eventPos;   // the filter envelope opens right here
+        handleMidi (msg);
     }
     if (pos < numSamples)
         engineActive = engine.render (mono + pos, numSamples - pos) || engineActive;
@@ -201,13 +212,28 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         echo.clear();
     echoWasOn = useEcho;
 
-    // 3. Effects: DC blocker -> crunch -> echo -> volume
+    const bool useFilter = filter.isOn();
+    if (useFilter && ! filterWasOn)
+        filter.reset();
+    filterWasOn = useFilter;
+
+    // 3. Effects: DC blocker -> C64 filter -> crunch -> echo -> volume
     float* right = numChannels > 1 ? buffer.getWritePointer (1) : nullptr;
     float peak = 0.0f;
+    int nextTrigger = 0;
 
     for (int i = 0; i < numSamples; ++i)
     {
         float x = dcBlocker.process (mono[i]);
+        if (useFilter)
+        {
+            while (nextTrigger < numFilterTriggers && filterTriggers[(size_t) nextTrigger] <= i)
+            {
+                filter.trigger();
+                ++nextTrigger;
+            }
+            x = filter.process (x);
+        }
         x = crusher.process (x);
 
         const float g = outputGain.getNextValue();
@@ -246,6 +272,7 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         dcBlocker.reset();
         crusher.reset();
         echo.clear();
+        filter.reset();
     }
 
     for (int ch = 2; ch < numChannels; ++ch)
@@ -379,13 +406,23 @@ void BitBuddyProcessor::rollSection (Section section, juce::Random& rng)
             set (bb::ids::echoFeedback, range (0.2f, 0.5f));
             break;
         }
+
+        case Section::Filter:
+        {
+            const float type = rng.nextFloat();
+            set (bb::ids::filterType,   type < 0.3f ? 0.0f : (type < 0.75f ? 1.0f : (type < 0.9f ? 2.0f : 3.0f)));
+            set (bb::ids::filterCutoff, 400.0f * std::pow (2.0f, range (0.0f, 4.0f)));   // 400 Hz .. 6.4 kHz
+            set (bb::ids::filterReso,   range (0.1f, 0.85f));
+            set (bb::ids::filterEnv,    chance (0.5f) ? range (0.2f, 0.8f) : 0.0f);
+            break;
+        }
     }
 }
 
 void BitBuddyProcessor::randomize()
 {
     juce::Random rng;
-    for (auto s : { Section::Sound, Section::Shape, Section::Chords, Section::Movement, Section::Crunch })
+    for (auto s : { Section::Sound, Section::Shape, Section::Chords, Section::Movement, Section::Crunch, Section::Filter })
         rollSection (s, rng);
 
     customName = "Surprise #" + juce::String (++randomCount);

@@ -37,6 +37,11 @@ const std::vector<Preset>& factoryPresets()
           { { wave, w::square }, { attack, 0.001f }, { decay, 0.18f }, { sustain, 0.45f }, { release, 0.05f },
             { sweepAmt, 5.0f }, { sweepTime, 0.04f }, { voiceMode, mono } } },
 
+        { "C64 Squelch Bass", "Rubbery Commodore 64 bass: the filter 'wows' on every note. Play low!",
+          { { wave, w::saw }, { attack, 0.001f }, { decay, 0.35f }, { sustain, 0.6f }, { release, 0.08f },
+            { voiceMode, mono }, { glide, 0.03f },
+            { filterType, 1.0f }, { filterCutoff, 260.0f }, { filterReso, 0.72f }, { filterEnv, 0.65f } } },
+
         { "Major Chord Arp", "Hold ONE key - you get a whole happy chord!",
           { { wave, w::pulse25 }, { arpMode, am::chord }, { arpChord, ch::major }, { arpSpeed, sp::hz30 },
             { sustain, 0.8f }, { release, 0.15f }, { echoMix, 0.15f } } },

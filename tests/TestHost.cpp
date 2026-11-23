@@ -301,9 +301,9 @@ static int runTests (const String& path)
     int automatable = 0;
     for (auto* prm : plugin->getParameters())
         automatable += prm->isAutomatable() ? 1 : 0;
-    res.check (automatable >= 26 && automatable <= 28, "Automatable parameters in the DAW",
+    res.check (automatable >= 30 && automatable <= 32, "Automatable parameters in the DAW",
                String (automatable) + " (+" + String (plugin->getParameters().size() - automatable) + " hidden MIDI-CC slots)");
-    res.check (plugin->getNumPrograms() == 22, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
+    res.check (plugin->getNumPrograms() == 23, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
 
     // ---- 2. Every preset makes sound, stays finite, and goes silent --------
     std::cout << "\n  -- every preset: sound / no NaN / no clipping / no stuck notes --\n";
@@ -499,6 +499,72 @@ static int runTests (const String& path)
         res.check (ok, "SMART chords (C major): Dm, Bdim, F", detail);
     }
     setScale (0, 0);   // leave Scale Lock off for the rest of the tests
+
+    // ---- 4c. C64 filter -----------------------------------------------------
+    std::cout << "\n  -- C64 filter --\n";
+    {
+        // "Fizz" = energy of the sample-to-sample differences: high notes and harmonics
+        auto fizz = [&] (const AudioBuffer<float>& b, double from, double to)
+        {
+            const int s0 = jmax (1, (int) (from * sr)), s1 = jmin (b.getNumSamples(), (int) (to * sr));
+            const float* x = b.getReadPointer (0);
+            double sum = 0.0;
+            for (int i = s0; i < s1; ++i)
+                sum += (double) (x[i] - x[i - 1]) * (x[i] - x[i - 1]);
+            return sum / jmax (1, s1 - s0);
+        };
+        auto rms = [&] (const AudioBuffer<float>& b, double from, double to)
+        {
+            const int s0 = (int) (from * sr), s1 = jmin (b.getNumSamples(), (int) (to * sr));
+            return (double) b.getRMSLevel (0, s0, s1 - s0);
+        };
+        const NormalisableRange<float> cutoffRange (60.0f, 12000.0f, 0.0f, 0.3f);
+        auto setFilter = [&] (int type, float cutoffHz, float reso, float env)
+        {
+            setParam (*plugin, "Filter", (float) type / 3.0f);
+            setParam (*plugin, "Cutoff", cutoffRange.convertTo0to1 (cutoffHz));
+            setParam (*plugin, "Resonance", reso);
+            setParam (*plugin, "Filter Env", env);
+        };
+
+        selectProgram (*plugin, "Classic Square");
+        const auto dry = renderNotes (*plugin, { { 0.0, 1.0, 69, 0.8f } }, 1.0, sr);
+        setFilter (1, 600.0f, 0.0f, 0.0f);
+        const auto low = renderNotes (*plugin, { { 0.0, 1.0, 69, 0.8f } }, 1.0, sr);
+        const double lowRatio = fizz (low, 0.2, 0.8) / fizz (dry, 0.2, 0.8);
+        res.check (lowRatio < 0.15, "FILTER LOW 600 Hz on A4 square: fizz cut", "fizz " + String (lowRatio * 100.0, 1) + "% of dry");
+
+        selectProgram (*plugin, "Classic Square");
+        const auto dryBass = renderNotes (*plugin, { { 0.0, 1.0, 45, 0.8f } }, 1.0, sr);
+        setFilter (3, 2000.0f, 0.0f, 0.0f);
+        const auto high = renderNotes (*plugin, { { 0.0, 1.0, 45, 0.8f } }, 1.0, sr);
+        const double highRatio = rms (high, 0.2, 0.8) / rms (dryBass, 0.2, 0.8);
+        res.check (highRatio < 0.4, "FILTER HIGH 2 kHz on A2 square: bass cut", "level " + String (highRatio * 100.0, 1) + "% of dry");
+
+        // Envelope: each note opens the filter, then it closes -> bright start, darker tail
+        selectProgram (*plugin, "C64 Squelch Bass");
+        setParam (*plugin, "Echo", 0.0f);
+        const auto squelch = renderNotes (*plugin, { { 0.0, 1.2, 40, 0.9f }, { 1.3, 0.8, 47, 0.9f } }, 2.6, sr);
+        const double opened = fizz (squelch, 0.005, 0.06), closed = fizz (squelch, 0.8, 1.1);
+        const double reopened = fizz (squelch, 1.305, 1.36);
+        const float squelchPeak = peakOf (squelch, 0.0, 2.6, sr);
+        res.check (allFinite (squelch) && opened > 3.0 * closed && reopened > 3.0 * closed && squelchPeak < 1.0f,
+                   "FILTER ENV: opens on each note, then closes",
+                   "start/tail fizz x" + String (opened / jmax (1e-12, closed), 1) + ", 2nd note x"
+                       + String (reopened / jmax (1e-12, closed), 1) + ", peak " + String (squelchPeak, 3));
+
+        // Worst case: max resonance, cutoff swept by the envelope, loud chord -> no blow-ups
+        selectProgram (*plugin, "PWM Strings");
+        setParam (*plugin, "Volume", 1.0f);
+        setFilter (2, 300.0f, 1.0f, 1.0f);
+        std::vector<NoteEvent> chord;
+        for (int n : { 36, 48, 55, 60, 64, 67, 72, 84 })
+            chord.push_back ({ 0.0, 1.5, n, 1.0f });
+        const auto wild = renderNotes (*plugin, chord, 2.0, sr);
+        const float wildPeak = peakOf (wild, 0.0, 2.0, sr);
+        res.check (allFinite (wild) && wildPeak < 1.0f, "FILTER max resonance + env + 8 notes: stable, below 0 dBFS",
+                   "peak " + String (wildPeak, 4));
+    }
 
     // ---- 5. Mono + legato glide -----------------------------------------------
     {
@@ -953,6 +1019,7 @@ static int runSnapshot (const File& outDir)
         { "Hero Lead",       { 69 },         "ui-hero-lead.png",   false },
         { "Major Chord Arp", { 60 },         "ui-chord-arp.png",   false },
         { "Smart Chords",    { 62 },         "ui-scale-lock.png",  false, 9, 4 },   // A minor pentatonic
+        { "C64 Squelch Bass", { 40 },        "ui-filter.png",      false },
         { "Drum Kit",        { 36, 42 },     "ui-drum-kit.png",    false },
         { "Classic Square",  {},             "ui-help.png",        true  },
     };

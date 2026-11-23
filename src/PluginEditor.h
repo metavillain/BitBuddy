@@ -73,6 +73,56 @@ private:
 };
 
 //==============================================================================
+/** A numbered, framed section of BitBuddy ("box") that owns its own controls,
+    so it can be laid out (and later hidden or moved) as one piece. */
+class Box : public juce::Component
+{
+public:
+    Box (const juce::String& number, const juce::String& title, juce::Colour accent);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+    std::function<void()> onDice;   // what the corner dice re-rolls
+
+protected:
+    virtual void layoutContent (juce::Rectangle<int> area) = 0;
+    juce::Colour accent;
+
+private:
+    juce::String number, title;
+    DiceButton dice;
+};
+
+/** Draws which pitches the filter lets through. */
+class FilterCurve : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit FilterCurve (juce::AudioProcessorValueTreeState& state);
+    void refresh();
+    void paint (juce::Graphics&) override;
+
+private:
+    juce::AudioProcessorValueTreeState& state;
+    int type = -1;
+    float cutoff = 0.0f, reso = 0.0f, env = 0.0f;
+};
+
+/** 6. C64 FILTER */
+class FilterBox : public Box
+{
+public:
+    explicit FilterBox (juce::AudioProcessorValueTreeState& state);
+    void refresh() { curve.refresh(); }
+
+private:
+    void layoutContent (juce::Rectangle<int>) override;
+
+    ParamButtons typeButtons;
+    FilterCurve curve;
+    Knob cutoff, reso, env;
+};
+
+//==============================================================================
 /** Retro green "screen" that shows the live waveform. */
 class Scope : public juce::Component, public juce::SettableTooltipClient
 {
@@ -216,6 +266,9 @@ private:
     Knob bits, rate, echoMix, echoFeedback, volume;
     juce::ComboBox echoTimeBox;
     juce::Label echoTimeLabel;
+
+    // 6. C64 filter
+    FilterBox filterBox;
 
     // play along: Scale Lock
     juce::ComboBox keyBox, scaleBox;

@@ -84,7 +84,7 @@ public:
     void randomize();
 
     /** The parts of BitBuddy each dice button can re-roll on its own. */
-    enum class Section { Sound, Shape, Chords, Movement, Crunch };
+    enum class Section { Sound, Shape, Chords, Movement, Crunch, Filter };
     void rollSection (Section);
     /** MUTATE: nudges the current sound a little instead of starting over. */
     void mutate();
@@ -119,9 +119,12 @@ private:
     bb::DcBlocker dcBlocker;
     bb::Crusher crusher;
     bb::PingPongEcho echo;
+    bb::SidFilter filter;
     juce::SmoothedValue<float> outputGain;
     float echoMix = 0.0f, echoFeedback = 0.0f;
-    bool echoWasOn = false;
+    bool echoWasOn = false, filterWasOn = false;
+    std::array<int, 64> filterTriggers {};   // sample positions of this block's new notes
+    int numFilterTriggers = 0;
     bool effectsIdle = true;   // no notes and all effect tails have died away
     int quietSamples = 0;      // consecutive silent output samples with no notes
 
@@ -159,6 +162,10 @@ private:
     std::atomic<float>* pVolume = nullptr;
     std::atomic<float>* pScaleKey = nullptr;
     std::atomic<float>* pScale = nullptr;
+    std::atomic<float>* pFilterType = nullptr;
+    std::atomic<float>* pFilterCutoff = nullptr;
+    std::atomic<float>* pFilterReso = nullptr;
+    std::atomic<float>* pFilterEnv = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BitBuddyProcessor)
 };

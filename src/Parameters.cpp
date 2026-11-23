@@ -11,6 +11,7 @@ juce::StringArray echoTimeNames()   { return { "1/16", "1/8", "1/8 D", "1/4", "1
 juce::StringArray voiceModeNames()  { return { "Poly", "Mono" }; }
 juce::StringArray keyNames()        { return { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }; }
 juce::StringArray scaleNames()      { return { "Off", "Major", "Minor", "Major Penta", "Minor Penta", "Blues", "Dorian", "Harm. Minor" }; }
+juce::StringArray filterTypeNames() { return { "Off", "Low Pass", "Band Pass", "High Pass" }; }
 
 namespace
 {
@@ -74,6 +75,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id, 1 }, name, range, def, attrs));
     };
 
+    auto addFloatV2 = [&layout] (const char* id, const char* name, NormalisableRange<float> range, float def,
+                                 std::function<String (float, int)> toText)
+    {
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { id, 2 }, name, range, def,
+                                                           FloatAttrs().withStringFromValueFunction (std::move (toText))));
+    };
+
     // version = the BitBuddy release that added the parameter (hosts use it to keep their order stable)
     auto addChoice = [&layout] (const char* id, const char* name, const StringArray& choices, int def, int version = 1)
     {
@@ -121,6 +129,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // 6. Play (added in 1.1): Scale Lock
     addChoice (ids::scaleKey, "Key",   keyNames(),   0, 2);
     addChoice (ids::scale,    "Scale", scaleNames(), 0, 2);
+
+    // 7. C64 filter (added in 1.1)
+    addChoice  (ids::filterType,   "Filter",     filterTypeNames(), 0, 2);
+    addFloatV2 (ids::filterCutoff, "Cutoff",     { 60.0f, 12000.0f, 0.0f, 0.3f }, 1500.0f,
+                [] (float v, int) { return v < 1000.0f ? String (juce::roundToInt (v)) + " Hz" : String (v / 1000.0f, 1) + " kHz"; });
+    addFloatV2 (ids::filterReso,   "Resonance",  { 0.0f, 1.0f }, 0.35f, percentText);
+    addFloatV2 (ids::filterEnv,    "Filter Env", { 0.0f, 1.0f }, 0.0f,  percentText);
 
     return layout;
 }

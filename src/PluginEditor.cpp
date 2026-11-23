@@ -92,6 +92,34 @@ void drawPixelLine (juce::Graphics& g, juce::Rectangle<float> area, float pixel,
         prevY = y;
     }
 }
+
+// The C64 filter's colour: the palette's red, lifted so text stays readable
+juce::Colour filterAccent() { return pal::red.brighter (0.45f); }
+
+// The frame of every section: dark panel, coloured border, number badge, title
+void drawBoxFrame (juce::Graphics& g, juce::Rectangle<int> r, const juce::String& number, const juce::String& title,
+                   juce::Colour accent)
+{
+    g.setColour (pal::dark);
+    g.fillRect (r);
+    g.setColour (accent);
+    g.drawRect (r, 2);
+
+    int textX = r.getX() + 10;
+    if (number.isNotEmpty())
+    {
+        const juce::Rectangle<int> badge (r.getX() + 8, r.getY() + 6, 16, 16);
+        g.fillRect (badge);
+        g.setColour (pal::bg);
+        g.setFont (pixelFont (8.0f));
+        g.drawText (number, badge.translated (1, 1), juce::Justification::centred);
+        textX = badge.getRight() + 8;
+    }
+
+    g.setColour (accent);
+    g.setFont (pixelFont (8.0f));
+    g.drawText (title, textX, r.getY() + 6, r.getWidth() - (textX - r.getX()) - 8, 17, juce::Justification::centredLeft);
+}
 } // namespace
 
 //==============================================================================
@@ -196,6 +224,123 @@ void DiceButton::paintButton (juce::Graphics& g, bool over, bool down)
         g.fillRect (std::round (r.getX() + r.getWidth() * fx - s * 0.5f), std::round (r.getY() + r.getHeight() * fy - s * 0.5f), s, s);
     };
     pip (0.28f, 0.28f); pip (0.72f, 0.28f); pip (0.5f, 0.5f); pip (0.28f, 0.72f); pip (0.72f, 0.72f);
+}
+
+//==============================================================================
+Box::Box (const juce::String& numberText, const juce::String& titleText, juce::Colour c)
+    : accent (c), number (numberText), title (titleText), dice (c)
+{
+    dice.onClick = [this] { if (onDice != nullptr) onDice(); };
+    addAndMakeVisible (dice);
+}
+
+void Box::paint (juce::Graphics& g)
+{
+    drawBoxFrame (g, getLocalBounds(), number, title, accent);
+}
+
+void Box::resized()
+{
+    dice.setBounds (getWidth() - 26, 5, 18, 18);
+    layoutContent (getLocalBounds().reduced (8, 6).withTrimmedTop (20));
+}
+
+//==============================================================================
+FilterCurve::FilterCurve (juce::AudioProcessorValueTreeState& s) : state (s)
+{
+    setTooltip ("FILTER CURVE: which pitches get through (high) and which get cut (low). "
+                "The bump is the resonance; the faint line shows how far ENV opens it on each note.");
+}
+
+void FilterCurve::refresh()
+{
+    const int t = juce::roundToInt (state.getRawParameterValue (ids::filterType)->load());
+    const float c = state.getRawParameterValue (ids::filterCutoff)->load();
+    const float r = state.getRawParameterValue (ids::filterReso)->load();
+    const float e = state.getRawParameterValue (ids::filterEnv)->load();
+    if (t != type || c != cutoff || r != reso || e != env)
+    {
+        type = t; cutoff = c; reso = r; env = e;
+        repaint();
+    }
+}
+
+void FilterCurve::paint (juce::Graphics& g)
+{
+    auto area = getLocalBounds().toFloat();
+    g.setColour (pal::bg);
+    g.fillRect (area);
+    g.setColour (pal::navy);
+    g.drawRect (area, 1.0f);
+
+    auto plot = area.reduced (4.0f);
+    constexpr float lowHz = 30.0f, highHz = 16000.0f, minDb = -30.0f, maxDb = 18.0f;
+    auto hzAt = [&] (float x01) { return lowHz * std::pow (highHz / lowHz, x01); };
+    auto curveAt = [&] (float cut)
+    {
+        return [&, cut] (float x01)
+        {
+            const float db = juce::Decibels::gainToDecibels (SidFilter::magnitudeAt (type, hzAt (x01), cut, reso), minDb);
+            return juce::jmap (juce::jlimit (minDb, maxDb, db), minDb, maxDb, -1.0f, 1.0f);
+        };
+    };
+
+    // 0 dB line
+    g.setColour (pal::dark);
+    const float zeroY = juce::jmap (0.0f, minDb, maxDb, plot.getBottom(), plot.getY());
+    g.fillRect (plot.getX(), zeroY, plot.getWidth(), 1.0f);
+
+    if (type == SidFilter::Off)
+    {
+        g.setColour (pal::grey);
+        g.setFont (pixelFont (7.0f));
+        g.drawText ("OFF", plot.withTrimmedBottom (plot.getHeight() * 0.55f), juce::Justification::centred);
+    }
+    else if (env > 0.01f)
+    {
+        g.setColour (filterAccent().withAlpha (0.35f));
+        drawPixelLine (g, plot, 2.0f, curveAt (juce::jmin (16000.0f, cutoff * std::exp2 (5.0f * env))));
+    }
+
+    g.setColour (type == SidFilter::Off ? pal::grey : filterAccent());
+    drawPixelLine (g, plot, 2.0f, curveAt (cutoff));
+}
+
+//==============================================================================
+FilterBox::FilterBox (juce::AudioProcessorValueTreeState& state)
+    : Box ("6", "C64 FILTER  (SQUELCH!)", filterAccent()),
+      typeButtons (*state.getParameter (ids::filterType), 4,
+                   textButtons ({ "OFF", "LOW", "BAND", "HIGH" },
+                                { "FILTER OFF: the raw chip sound, nothing filtered.",
+                                  "LOW PASS: keeps the low part of the sound and cuts the fizz. Turn CUTOFF down for darker, rounder "
+                                  "sounds - the classic Commodore 64 bass!",
+                                  "BAND PASS: keeps only a slice in the middle - thin, nasal, 'wah' and telephone sounds.",
+                                  "HIGH PASS: cuts the bass and keeps the sizzle - thin and airy, nice for hi-hats and effects." },
+                                filterAccent()),
+                   true, 1),
+      curve (state),
+      cutoff (state, ids::filterCutoff, "CUTOFF", filterAccent(),
+              "CUTOFF: where the filter starts cutting. Low = dark and muffled, high = bright. Try turning it while you play!"),
+      reso (state, ids::filterReso, "RESO", filterAccent(),
+            "RESONANCE: makes the filter 'sing' at the cutoff - the squelchy, rubbery C64 sound. Very high settings whistle!"),
+      env (state, ids::filterEnv, "ENV", filterAccent(),
+           "ENV (filter envelope): every new note opens the filter, then it closes over the DECAY time. "
+           "With LOW and some RESO you get 'wow' basses and 'pew' leads!")
+{
+    for (auto* c : { (juce::Component*) &typeButtons, (juce::Component*) &curve, (juce::Component*) &cutoff,
+                     (juce::Component*) &reso, (juce::Component*) &env })
+        addAndMakeVisible (c);
+}
+
+void FilterBox::layoutContent (juce::Rectangle<int> area)
+{
+    typeButtons.setBounds (area.removeFromLeft (66));
+    area.removeFromLeft (8);
+    curve.setBounds (area.removeFromLeft (170).reduced (0, 2));
+    area.removeFromLeft (6);
+    const int w = area.getWidth() / 3;
+    for (auto* k : { &cutoff, &reso, &env })
+        k->setBounds (area.removeFromLeft (w));
 }
 
 //==============================================================================
@@ -629,6 +774,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
       echoMix      (state, ids::echoMix,      "ECHO",    pal::sky, "ECHO: adds echoes that bounce between your left and right speakers. Chiptune composers used to fake this with a spare channel!"),
       echoFeedback (state, ids::echoFeedback, "REPEATS", pal::sky, "REPEATS: how many echoes you hear - low = one or two, high = lots."),
       volume       (state, ids::volume,       "VOLUME",  pal::sky, "VOLUME: the overall loudness of BitBuddy."),
+      filterBox (p.apvts),
       keyboard (p.keyboardState)
 {
     // --- header ---
@@ -741,6 +887,10 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
                 "ECHO TIME: the gap between echoes, locked to your song's tempo. 1/8 D (dotted eighth) is a classic choice.",
                 pal::sky);
     echoTimeAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (state, ids::echoTime, echoTimeBox);
+
+    // --- 6. C64 filter ---
+    filterBox.onDice = [this] { proc.rollSection (BitBuddyProcessor::Section::Filter); };
+    addAndMakeVisible (filterBox);
 
     // --- play along: Scale Lock ---
     setupCombo (keyBox, keyLabel, "KEY", keyNames(),
@@ -860,25 +1010,7 @@ void MainPanel::setupCombo (juce::ComboBox& box, juce::Label& label, const juce:
 void MainPanel::drawSection (juce::Graphics& g, juce::Rectangle<int> r, const juce::String& number,
                              const juce::String& title, juce::Colour accent)
 {
-    g.setColour (pal::dark);
-    g.fillRect (r);
-    g.setColour (accent);
-    g.drawRect (r, 2);
-
-    int textX = r.getX() + 10;
-    if (number.isNotEmpty())
-    {
-        const juce::Rectangle<int> badge (r.getX() + 8, r.getY() + 6, 16, 16);
-        g.fillRect (badge);
-        g.setColour (pal::bg);
-        g.setFont (pixelFont (8.0f));
-        g.drawText (number, badge.translated (1, 1), juce::Justification::centred);
-        textX = badge.getRight() + 8;
-    }
-
-    g.setColour (accent);
-    g.setFont (pixelFont (8.0f));
-    g.drawText (title, textX, r.getY() + 6, r.getWidth() - (textX - r.getX()) - 8, 17, juce::Justification::centredLeft);
+    drawBoxFrame (g, r, number, title, accent);
 }
 
 void MainPanel::paint (juce::Graphics& g)
@@ -984,6 +1116,7 @@ void MainPanel::resized()
     for (auto [button, section] : dice)
         button->setBounds (section.getRight() - 26, section.getY() + 5, 18, 18);
 
+    filterBox.setBounds (10, 550, 480, 112);
     sPlay = { 500, 550, 490, 112 };
     keyLabel.setBounds (510, 578, 70, 12);
     keyBox.setBounds (510, 592, 70, 26);
@@ -1002,6 +1135,7 @@ void MainPanel::timerCallback()
 {
     scope.refresh();
     envelopeView.refresh();
+    filterBox.refresh();
 
     const int wave = juce::jlimit (0, 7, juce::roundToInt (state.getRawParameterValue (ids::wave)->load()));
     if (wave != lastWave)
