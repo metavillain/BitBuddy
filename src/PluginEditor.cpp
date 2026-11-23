@@ -604,13 +604,69 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     hintLabel.setText (kDefaultHint, juce::dontSendNotification);
     hintLabel.setMinimumHorizontalScale (0.8f);
     addAndMakeVisible (hintLabel);
+
+    keysStatus.setFont (pixelFont (7.0f));
+    keysStatus.setJustificationType (juce::Justification::centred);
+    keysStatus.setTooltip ("COMPUTER KEYBOARD: when this says KEYS ON, your letter keys play notes "
+                           "(A W S E D F T G Y H U J K = one octave, Z / X = octave down / up). "
+                           "If it says CLICK FOR KEYS, click anywhere in BitBuddy.");
+    addAndMakeVisible (keysStatus);
+
     addAndMakeVisible (keyboard);
     addChildComponent (help);
 
     addMouseListener (this, true);
-    setLookAndFeel (&lookAndFeel);
+    setLookAndFeel (&lookAndFeel);   // (re)creates slider / combo text boxes...
+    stopFocusStealing (*this);       // ...so do this afterwards
     setSize (baseWidth, baseHeight);
     startTimerHz (30);
+}
+
+void MainPanel::stopFocusStealing (juce::Component& root)
+{
+    for (auto* c : root.getChildren())
+    {
+        if (c == &keyboard)
+            continue;
+
+        c->setWantsKeyboardFocus (false);
+        c->setMouseClickGrabsKeyboardFocus (false);
+        stopFocusStealing (*c);
+    }
+}
+
+bool MainPanel::windowIsActive() const
+{
+    if (auto* peer = getPeer())
+        return peer->isFocused();
+    return false;
+}
+
+void MainPanel::focusKeyboard()
+{
+    // Never interrupt an open menu or dialog
+    if (keyboard.isShowing() && ! keyboard.hasKeyboardFocus (false)
+        && juce::ModalComponentManager::getInstance()->getNumModalComponents() == 0)
+        keyboard.grabKeyboardFocus();
+}
+
+void MainPanel::updateKeysStatus()
+{
+    const bool on = keyboard.hasKeyboardFocus (false);
+    const auto text = on ? "KEYS ON  OCT " + juce::MidiMessage::getMidiNoteName (keyboard.getBaseOctave() * 12, true, true, 3)
+                         : juce::String ("CLICK FOR KEYS");
+    if (text != lastKeysStatus)
+    {
+        lastKeysStatus = text;
+        keysStatus.setText (text, juce::dontSendNotification);
+        keysStatus.setColour (juce::Label::textColourId, on ? pal::lime : pal::orange);
+    }
+}
+
+void MainPanel::mouseDown (const juce::MouseEvent&)
+{
+    // Any click inside BitBuddy (knob, button, wave...) hands the letter keys to the piano
+    focusKeyboard();
 }
 
 MainPanel::~MainPanel()
@@ -757,7 +813,8 @@ void MainPanel::resized()
     volume.setBounds (922, 418, 62, 118);
 
     hintArea = { 10, 550, 980, 28 };
-    hintLabel.setBounds (hintArea.reduced (2).withTrimmedLeft (26));
+    hintLabel.setBounds (hintArea.reduced (2).withTrimmedLeft (26).withTrimmedRight (176));
+    keysStatus.setBounds (hintArea.getRight() - 176, hintArea.getY() + 2, 172, hintArea.getHeight() - 4);
     keyboard.setBounds (10, 584, 980, 70);
     help.setBounds (getLocalBounds());
 }
@@ -784,12 +841,13 @@ void MainPanel::timerCallback()
 
     syncPresetBox();
 
-    // In the standalone app, let the computer keyboard play notes right away
-    if (! focusGrabbed && proc.wrapperType == juce::AudioProcessor::wrapperType_Standalone && keyboard.isShowing())
-    {
-        keyboard.grabKeyboardFocus();
-        focusGrabbed = true;
-    }
+    // Whenever BitBuddy's own window is the active one (and no menu is open),
+    // keep the letter keys on the piano. This also recovers focus after a menu
+    // closes. It never runs while your DAW has focus, so DAW shortcuts keep working.
+    if (windowIsActive())
+        focusKeyboard();
+
+    updateKeysStatus();
 }
 
 void MainPanel::syncPresetBox()

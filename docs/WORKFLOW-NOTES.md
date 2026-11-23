@@ -26,6 +26,10 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 15 | Mutation testing (3 planted bugs) | **3/3 caught** | – |
 | 16 | GitHub: private repo, JUCE as submodule | pushed | – |
 | 17 | `install-plugin.ps1` (single, announced UAC prompt) | system-wide install OK, verified by SHA-256 against the build | – |
+| 18 | **User bug report:** computer keys only work after clicking the piano | root cause: every button/knob/menu took keyboard focus when clicked; the one-time startup focus grab could fire before the window was active | – |
+| 19 | Fix: only the piano may take focus; clicks inside BitBuddy and an active-window timer hand keys back; KEYS ON indicator | new `--focus-test` (simulated mouse clicks on a real window): **9/9**; with the fix disabled (mutant): **1/9** | stale-binary trap, see §4 |
+| 20 | pluginval L10 re-run, reinstall (1 announced UAC) | SUCCESS, hash-verified | – |
+| 21 | Share package for a friend (`tools/make-share-package.ps1`) | self-contained zip: exe + VST3 + .bat installer + READ ME FIRST + guide + demo + source + licenses | – |
 
 ---
 
@@ -46,6 +50,10 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
 8. **Name / branding?** Shows in every DAW plugin list.
 9. **Where should it live?** (GitHub: public/private, account) Asked at the end here; better up front.
 10. **Which free DAW to install for testing?** (Here: REAPER + Cakewalk + Audacity.)
+11. **Will you share it, and with whom (their OS)?** Asked mid-project here. Knowing up front shapes
+    packaging (zip + installer + plain-text readme), licensing (AGPL → ship source) and platform (Mac = AU build).
+12. **How will you play it: mouse, computer keys, MIDI keyboard?** Computer-key playing turned out to
+    matter a lot, and focus behaviour needed a dedicated fix and test.
 
 ---
 
@@ -100,6 +108,17 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
 - MSI exit code **1602** = user cancelled (usually an unanswered or overlapping UAC prompt).
 - REAPER scans the per-user VST3 folder (`%LOCALAPPDATA%\Programs\Common\VST3`); Cakewalk does not.
 - LMMS hosts only VST2; Audacity hosts VST3 *effects* but not instruments.
+- **JUCE keyboard focus:** `Button`, `ComboBox` etc. take keyboard focus when clicked. For an instrument
+  that plays from letter keys, set `setWantsKeyboardFocus(false)` + `setMouseClickGrabsKeyboardFocus(false)`
+  on everything except the piano, *after* `setLookAndFeel` (which recreates slider/combo text boxes).
+  Only auto-refocus when your own window is active (`getPeer()->isFocused()`) and no menu is open
+  (`ModalComponentManager::getNumModalComponents() == 0`), so DAW shortcuts aren't stolen.
+- `ComponentPeer::handleMouseEvent` can simulate real clicks for UI tests (needs the window to be active).
+- **Stale-binary trap in mutation testing:** restoring a file with `Copy-Item` keeps its *old* timestamp,
+  so MSBuild skips the rebuild and you test the mutant again. Restore with `git checkout` (new mtime) or
+  touch the file (`(Get-Item f).LastWriteTime = Get-Date`). A "fixed" run that fails identically to the
+  mutant is the tell-tale sign.
+- The Claude Code harness blocks wildcard `Remove-Item` on variable paths. Delete exact paths (`-LiteralPath`).
 
 ---
 
@@ -141,8 +160,21 @@ Help overlay) to PNG.
 | Pitch bend not reset on `prepare()` | CHORD arp, NOTES arp, MONO legato |
 | Major chord built as minor | CHORD arp |
 
+**Layer 5: interaction test** (`--focus-test`, added after a user bug report). Opens the editor as a
+real window and simulates mouse clicks (wave button, knob, MONO, next preset, SURPRISE ME!, drop-down
+menu open/close). Criteria: only the piano can take keyboard focus; keys work as soon as the window
+opens; keys still work after each click; keys come back after a menu closes; the simulated SAW click
+really selected Saw (proves clicks land). Prints SKIP if the window can't become active.
+
+| Focus mutant | Result |
+|---|---|
+| Fix disabled (old behaviour) | 1/9 pass: all 8 focus checks fail, i.e. the user's bug is reproduced |
+| Fix enabled | 9/9 pass |
+
 **Not automated (needs a human):** listening for taste and balance, real-DAW UI behaviour
-(focus, resizing in each host), MIDI-keyboard feel.
+(resizing and key routing in each host), MIDI-keyboard feel.
+*Lesson from the user's report:* automated tests checked sound and state but not "click then type".
+For instruments, add an interaction test for the main play loop from day one.
 
 ---
 
@@ -195,7 +227,8 @@ Root causes of the run-1 failures:
 - [ ] Own test host (`--test`) → triage failures: product bug vs. instrument bug vs. method bug.
 - [ ] pluginval `--strictness-level 10`.
 - [ ] UI snapshots → review.
-- [ ] Mutation-test 2–3 planted bugs.
+- [ ] Interaction test of the main play loop (click controls, then play from the computer keyboard).
+- [ ] Mutation-test 2–3 planted bugs (restore with `git checkout` or touch the file: stale-binary trap).
 - [ ] Demo render (audio + MIDI parts).
 
 **Phase 4: deliver**
@@ -203,13 +236,27 @@ Root causes of the run-1 failures:
 - [ ] Install the DAW(s) the user chose; note which folders each scans.
 - [ ] README + beginner guide + workflow notes; scan for personal info; `.gitignore` build output.
 - [ ] Git: framework as a submodule, noreply commit identity, private repo unless told otherwise.
+- [ ] Share package: zip with exe + plugin + double-click installer + plain-text readme + source (AGPL) + licenses.
 
 **Rough timings this run:** tools ~15 min (mostly download) · code ~1 h · first build 5 min ·
 test/fix loop ~15 min · pluginval 16 s · docs + install + GitHub ~15 min.
 
 ---
 
-## 8. Possible next steps
+## 8. Fun-factor ideas (ranked by fun per effort)
+
+1. **Scale Lock + Smart Chords**: every key snaps to a chosen key/scale (no wrong notes), and CHORD mode
+   picks major/minor automatically per scale degree (A → Am, F → F...). Small effort, big beginner payoff.
+2. **Jam Mode**: a built-in drums + bass + chords loop in the standalone to noodle a melody over.
+3. **Record button**: save what you played in the standalone as WAV + MIDI (no DAW needed).
+4. **Draw your own wave**: Game Boy "wave channel": draw a 32-step waveform on the SCREEN.
+5. **Instrument macros**: FamiTracker-style volume / arpeggio / pitch / duty sequences drawn as bars.
+6. **My Presets + per-section dice + Mutate** (nudge a sound instead of fully randomising).
+7. **C64 SID-style resonant filter** for squelchy basses.
+8. **Visual fun**: letter labels on the piano keys, a pixel mascot that dances to the notes, Game Boy-green / CRT themes.
+9. **Console modes**: NES / Game Boy / C64 voicing presets with each chip's limits.
+
+## 9. Possible next steps
 
 - ~~Run `install-plugin.ps1`~~: done; the retry alone, announced, succeeded. Lesson confirmed.
   The script now verifies the copy by hash (elevated processes don't report failure back).

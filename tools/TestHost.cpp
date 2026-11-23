@@ -795,6 +795,124 @@ static int runSnapshot (const File& outDir)
 }
 
 //==============================================================================
+// Opens the editor as a real window, clicks controls with simulated mouse
+// events, and checks the computer keyboard stays on the piano.
+static void forEachComponent (Component& c, const std::function<void (Component&)>& fn)
+{
+    fn (c);
+    for (auto* child : c.getChildren())
+        forEachComponent (*child, fn);
+}
+
+static void clickOn (ComponentPeer& peer, Component& editor, Component& target)
+{
+    const auto pos = editor.getLocalPoint (&target, target.getLocalBounds().getCentre()).toFloat();
+    const auto t = Time::currentTimeMillis();
+    peer.handleMouseEvent (MouseInputSource::InputSourceType::mouse, pos, ModifierKeys (ModifierKeys::leftButtonModifier),
+                           MouseInputSource::defaultPressure, MouseInputSource::defaultOrientation, t);
+    peer.handleMouseEvent (MouseInputSource::InputSourceType::mouse, pos, ModifierKeys(),
+                           MouseInputSource::defaultPressure, MouseInputSource::defaultOrientation, t + 60);
+    MessageManager::getInstance()->runDispatchLoopUntil (200);
+}
+
+static int runFocusTest()
+{
+    Results res;
+    std::cout << "\n=== Keyboard focus test ===\n\n";
+
+    BitBuddyProcessor proc;
+    proc.prepareToPlay (44100.0, 512);
+    std::unique_ptr<AudioProcessorEditor> editor (proc.createEditor());
+    editor->addToDesktop (ComponentPeer::windowHasTitleBar | ComponentPeer::windowAppearsOnTaskbar);
+    editor->setTopLeftPosition (80, 80);
+    editor->setVisible (true);
+    editor->toFront (true);
+    MessageManager::getInstance()->runDispatchLoopUntil (800);
+
+    // 1. Structure: only the piano may ever take keyboard focus
+    MidiKeyboardComponent* piano = nullptr;
+    StringArray offenders;
+    for (auto* child : editor->getChildren())
+        forEachComponent (*child, [&] (Component& c)
+        {
+            if (auto* k = dynamic_cast<MidiKeyboardComponent*> (&c))
+            {
+                piano = k;
+                return;
+            }
+            if (piano != nullptr && piano->isParentOf (&c))   // the piano's own (hidden) scroll arrows
+                return;
+            if (c.getWantsKeyboardFocus())
+                offenders.add (typeid (c).name());
+        });
+    res.check (piano != nullptr && offenders.isEmpty(), "Only the piano can take keyboard focus",
+               offenders.isEmpty() ? String ("ok") : offenders.joinIntoString (", "));
+
+    auto* peer = editor->getPeer();
+    if (peer == nullptr || piano == nullptr || ! peer->isFocused())
+    {
+        std::cout << "  SKIP  click tests: the test window could not become the active window\n";
+        std::cout << "\n  " << res.passed << " passed, " << res.failed << " failed\n";
+        return res.failed;
+    }
+
+    res.check (piano->hasKeyboardFocus (false), "Keys work as soon as the window opens", "");
+
+    // 2. Click a selection of controls; the piano must keep the keys after each one
+    Slider* firstKnob = nullptr;
+    forEachComponent (*editor, [&] (Component& c)
+    {
+        if (firstKnob == nullptr)
+            firstKnob = dynamic_cast<Slider*> (&c);
+    });
+
+    const std::pair<const char*, Component*> targets[] = {
+        { "wave button (SAW)",     findButton (*editor, "SAW") },
+        { "knob (Attack)",         firstKnob },
+        { "MONO button",           findButton (*editor, "MONO") },
+        { "next-preset button",    findButton (*editor, ">") },
+        { "SURPRISE ME! button",   findButton (*editor, "SURPRISE ME!") },
+    };
+
+    for (const auto& [what, target] : targets)
+    {
+        if (target == nullptr)
+        {
+            res.check (false, String ("Click ") + what, "control not found");
+            continue;
+        }
+        clickOn (*peer, *editor, *target);
+        res.check (piano->hasKeyboardFocus (false), String ("Keys still work after clicking ") + what, "");
+
+        if (String (what).contains ("SAW"))   // prove the simulated clicks really land
+            res.check (roundToInt (proc.apvts.getRawParameterValue ("wave")->load()) == 4,
+                       "Simulated click selected the SAW wave", "");
+    }
+
+    // 3. Open and close a drop-down menu: focus must come back by itself
+    ComboBox* combo = nullptr;
+    forEachComponent (*editor, [&] (Component& c)
+    {
+        if (combo == nullptr)
+            combo = dynamic_cast<ComboBox*> (&c);
+    });
+    if (combo != nullptr)
+    {
+        clickOn (*peer, *editor, *combo);
+        MessageManager::getInstance()->runDispatchLoopUntil (300);
+        const bool menuOpened = ModalComponentManager::getInstance()->getNumModalComponents() > 0;
+        PopupMenu::dismissAllActiveMenus();
+        MessageManager::getInstance()->runDispatchLoopUntil (400);
+        res.check (piano->hasKeyboardFocus (false), "Keys come back after a drop-down menu closes",
+                   menuOpened ? "menu opened + closed" : "menu did not open");
+    }
+
+    editor->removeFromDesktop();
+    std::cout << "\n  " << res.passed << " passed, " << res.failed << " failed\n";
+    return res.failed;
+}
+
+//==============================================================================
 int main (int argc, char* argv[])
 {
     ScopedJuceInitialiser_GUI juceInit;
@@ -809,6 +927,8 @@ int main (int argc, char* argv[])
         return runDemo (args[1], File (args[2]));
     if (args.size() >= 2 && args[0] == "--snapshot")
         return runSnapshot (File (args[1]));
+    if (args.size() >= 1 && args[0] == "--focus-test")
+        return runFocusTest();
 
     std::cout << "usage:\n  BitBuddyTestHost --test <plugin.vst3>\n"
                  "  BitBuddyTestHost --demo <plugin.vst3> <outDir>\n"

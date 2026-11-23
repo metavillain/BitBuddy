@@ -49,6 +49,8 @@ Double-click **`BitBuddy.exe`** (in `build\BitBuddy_artefacts\Release\Standalone
 - Click **Options** (top-left) → choose your audio output (and MIDI keyboard if you have one).
 - Play the on-screen keyboard with the mouse, or your computer keys:
   `A W S E D F T G Y H U J K` = one octave, `Z` / `X` = octave down / up.
+  The bottom-right corner says **KEYS ON** (green) when your letter keys play BitBuddy,
+  and shows the current octave. Clicking knobs, buttons or menus never takes the keys away.
 - Click **SURPRISE ME!** for random sounds, or step through presets with `<` `>`.
 
 ### B. Inside a DAW (to make real songs)

@@ -107,6 +107,7 @@ public:
     juce::String getWhiteNoteText (int midiNoteNumber) override;
     bool keyPressed (const juce::KeyPress&) override;
     void resized() override;
+    int getBaseOctave() const noexcept { return baseOctave; }
 
 private:
     bool drumMode = false;
@@ -141,10 +142,18 @@ public:
     void resized() override;
     void mouseEnter (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
+    void mouseDown (const juce::MouseEvent&) override;
 
 private:
     void timerCallback() override;
     void showHintFor (juce::Component*);
+
+    // Computer-keyboard playing: only the piano ever takes keyboard focus, so
+    // clicking knobs, buttons or menus never "steals" your letter keys.
+    void stopFocusStealing (juce::Component& root);
+    void focusKeyboard();
+    bool windowIsActive() const;
+    void updateKeysStatus();
     void syncPresetBox();
     void setupCombo (juce::ComboBox&, juce::Label&, const juce::String& title, const juce::StringArray& items,
                      const juce::String& hint, juce::Colour accent);
@@ -187,6 +196,8 @@ private:
     juce::Label echoTimeLabel;
 
     juce::Label hintLabel;
+    juce::Label keysStatus;
+    juce::String lastKeysStatus;
     ChipKeyboard keyboard;
     HelpOverlay help;
 
@@ -195,7 +206,6 @@ private:
     juce::Rectangle<int> s1, sScope, s2, s3, s4, s5, hintArea;
     int lastWave = -1, lastArpMode = -1;
     juce::String lastPresetName;
-    bool focusGrabbed = false;
 };
 } // namespace bb
 

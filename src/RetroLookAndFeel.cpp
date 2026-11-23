@@ -98,6 +98,16 @@ juce::Label* RetroLookAndFeel::createSliderTextBox (juce::Slider& slider)
     l->setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     l->setColour (juce::Label::outlineColourId, juce::Colours::transparentBlack);
     l->setMinimumHorizontalScale (0.7f);
+    l->setWantsKeyboardFocus (false);              // clicking a knob must not steal the
+    l->setMouseClickGrabsKeyboardFocus (false);    // computer keyboard from the piano
+    return l;
+}
+
+juce::Label* RetroLookAndFeel::createComboBoxTextBox (juce::ComboBox& box)
+{
+    auto* l = LookAndFeel_V4::createComboBoxTextBox (box);
+    l->setWantsKeyboardFocus (false);
+    l->setMouseClickGrabsKeyboardFocus (false);
     return l;
 }
 

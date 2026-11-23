@@ -20,7 +20,8 @@ is quick and fun even if you've never made music before.
 - **21 presets**, including leads, bass, chords, drums and sound effects (Coin, Jump, Laser, Power Up, Explosion)
 - **SURPRISE ME!** button for random-but-musical sounds
 - **Built-in help:** hover any control for a plain-English explanation; a numbered 1–5 layout walks you through making a sound
-- Live waveform "screen", on-screen keyboard (plus computer-keyboard playing in the standalone app)
+- Live waveform "screen", on-screen keyboard, and computer-keyboard playing that stays active while you
+  tweak knobs (a **KEYS ON** indicator shows when your letter keys are playing)
 - Mod wheel → vibrato, pitch bend (±2 semitones), sustain pedal
 - Resizable window; very light on CPU (~1% of one core for 8-voice chords)
 
@@ -35,6 +36,16 @@ Or just run the standalone app: `build\BitBuddy_artefacts\Release\Standalone\Bit
 
 **Works in:** REAPER, Cakewalk, FL Studio, Ableton Live, Bitwig, Studio One, Cubase and
 any other DAW that supports VST3 instruments. *(Logic/GarageBand need an AU build on a Mac.)*
+
+## Share it with a friend
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\make-share-package.ps1
+```
+
+This creates `dist\BitBuddy-<version>-Windows.zip`, a self-contained package with the standalone app,
+the VST3, a double-click installer (`Install BitBuddy.bat`), a plain-text *READ ME FIRST*,
+the beginner's guide, the demo song, licenses and the source code. Your friend needs Windows 10/11 (64-bit).
 
 ## Demo
 
@@ -68,6 +79,9 @@ Outputs:
 ```powershell
 # 44 automated tests: loads the real VST3 like a DAW and measures the audio
 .\build\BitBuddyTestHost_artefacts\Release\BitBuddyTestHost.exe --test build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
+
+# 9 UI tests: opens a real window, simulates mouse clicks, checks the computer keyboard stays on the piano
+.\build\BitBuddyTestHost_artefacts\Release\BitBuddyTestHost.exe --focus-test
 
 # Re-render the demo song + MIDI files, and the UI screenshots
 .\build\BitBuddyTestHost_artefacts\Release\BitBuddyTestHost.exe --demo build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3 demo

@@ -1,0 +1,14 @@
+﻿
+=== Keyboard focus test ===
+
+  PASS  Only the piano can take keyboard focus      ok
+  PASS  Keys work as soon as the window opens       
+  PASS  Keys still work after clicking wave button (SAW)
+  PASS  Simulated click selected the SAW wave       
+  PASS  Keys still work after clicking knob (Attack)
+  PASS  Keys still work after clicking MONO button  
+  PASS  Keys still work after clicking next-preset button
+  PASS  Keys still work after clicking SURPRISE ME! button
+  PASS  Keys come back after a drop-down menu closesmenu opened + closed
+
+  9 passed, 0 failed

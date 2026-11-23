@@ -1,6 +1,7 @@
 # Build output
 build/
 out/
+dist/
 *.log
 
 # IDE / OS clutter
