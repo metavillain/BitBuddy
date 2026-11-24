@@ -17,7 +17,7 @@ is quick and fun even if you've never made music before.
 |---|---|---|
 | **Windows** 10 / 11 | app + VST3 plugin | ✅ download |
 | **Mac** (Apple Silicon + Intel, macOS 10.13+) | app + Audio Unit + VST3 | ✅ download |
-| **Android** 7.0+ phone / tablet | app (`.apk`) | ✅ download |
+| **Android** 7.0+ phone / tablet | app (`.apk`); on phones the keyboard stays pinned and the rest scrolls | ✅ download |
 | **iPhone / iPad** | app + AUv3 (GarageBand, AUM…) | 🧪 builds and runs in the iPad simulator; sharing it needs a paid Apple Developer account |
 
 **New to all this?** Start with the **[Beginner's Guide](docs/BEGINNERS-GUIDE.md)**.

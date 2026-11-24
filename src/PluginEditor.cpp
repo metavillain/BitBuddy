@@ -31,7 +31,11 @@ const char* const kArpTips[3] = {
     "NOTES is on: hold 2-4 keys - they play one after another as a pattern.",
 };
 
+#if JUCE_IOS || JUCE_ANDROID
+const char* const kDefaultHint = "Tap anything to learn what it does.   Swipe up / down to see more.";
+#else
 const char* const kDefaultHint = "Hover over anything to learn what it does.   Double-click a knob to reset it.";
+#endif
 
 // Preset menu item ids: factory presets are 1..N
 constexpr int kUserPresetIdBase = 1001;   // MY PRESETS
@@ -164,6 +168,8 @@ Knob::Knob (juce::AudioProcessorValueTreeState& state, const juce::String& param
 
     if (auto* p = state.getParameter (paramId))
         slider.setDoubleClickReturnValue (true, (double) p->convertFrom0to1 (p->getDefaultValue()));
+
+    setViewportIgnoreDragFlag (true);   // on a phone: dragging a knob turns it, it doesn't scroll the page
 }
 
 void Knob::resized()
@@ -464,6 +470,7 @@ WaveDrawer::WaveDrawer (BitBuddyProcessor& p) : proc (p)
 {
     setTooltip ("DRAW YOUR WAVE: click and drag to draw one cycle of the sound - 32 steps x 16 levels, just like the "
                 "Game Boy's wave channel. Smooth = soft and flute-like, jagged = buzzy and bright.");
+    setViewportIgnoreDragFlag (true);   // dragging draws, it doesn't scroll
 
     static const char* const names[] = { "SINE", "TRI", "SAW", "SQR", "RND" };
     static const char* const hints[] = { "SINE: a smooth, round wave - soft and flute-like.",
@@ -623,6 +630,7 @@ MacroEditor::MacroEditor (BitBuddyProcessor& p) : proc (p)
 {
     setTooltip ("MACROS: draw how each note changes over time - 60 steps every second, like FamiTracker. Pick a lane, "
                 "turn it ON, click + drag to draw. LEN = number of steps; click the strip at the bottom to set where it loops.");
+    setViewportIgnoreDragFlag (true);   // dragging draws, it doesn't scroll
 
     for (int i = 0; i < kNumMacroLanes; ++i)
     {
@@ -1694,9 +1702,27 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     for (auto* box : allBoxes)
     {
         box->onHide = [this] (Box& b) { setBoxVisible (b.getId(), false); };
-        box->onDragStart = [] (Box& b, const juce::MouseEvent&) { b.toFront (false); b.setAlpha (0.8f); };
-        box->onDragMove = [this] (Box& b, const juce::MouseEvent& e) { dragBoxTo (b, e.getEventRelativeTo (this).getPosition()); };
-        box->onDragEnd = [this] (Box& b, const juce::MouseEvent&) { b.setAlpha (1.0f); saveLayout(); };
+        box->onDragStart = [this] (Box& b, const juce::MouseEvent&)
+        {
+            if (boxDraggingEnabled)
+            {
+                b.toFront (false);
+                b.setAlpha (0.8f);
+            }
+        };
+        box->onDragMove = [this] (Box& b, const juce::MouseEvent& e)
+        {
+            if (boxDraggingEnabled)
+                dragBoxTo (b, e.getEventRelativeTo (this).getPosition());
+        };
+        box->onDragEnd = [this] (Box& b, const juce::MouseEvent&)
+        {
+            if (b.getAlpha() < 1.0f)
+            {
+                b.setAlpha (1.0f);
+                saveLayout();
+            }
+        };
         addAndMakeVisible (box);
     }
     loadLayout();
@@ -1706,16 +1732,18 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     hintLabel.setColour (juce::Label::textColourId, pal::white);
     hintLabel.setText (kDefaultHint, juce::dontSendNotification);
     hintLabel.setMinimumHorizontalScale (0.8f);
-    addAndMakeVisible (hintLabel);
+    bottomStrip.addAndMakeVisible (hintLabel);
 
     keysStatus.setFont (pixelFont (7.0f));
     keysStatus.setJustificationType (juce::Justification::centred);
     keysStatus.setTooltip ("COMPUTER KEYBOARD: when this says KEYS ON, your letter keys play notes "
                            "(A W S E D F T G Y H U J K = one octave, Z / X = octave down / up). "
                            "If it says CLICK FOR KEYS, click anywhere in BitBuddy.");
-    addAndMakeVisible (keysStatus);
-
-    addAndMakeVisible (keyboard);
+   #if ! (JUCE_IOS || JUCE_ANDROID)
+    bottomStrip.addAndMakeVisible (keysStatus);   // phones have no computer keyboard to report on
+   #endif
+    bottomStrip.addAndMakeVisible (keyboard);
+    addAndMakeVisible (bottomStrip);
     addChildComponent (help);
 
     addMouseListener (this, true);
@@ -1823,8 +1851,14 @@ void MainPanel::paint (juce::Graphics& g)
     g.setColour (pal::light);
     g.setFont (pixelFont (8.0f));
     g.drawText ("8-BIT CHIPTUNE SYNTH", 18, 44, 210, 12, juce::Justification::left);
+}
 
-    // Hint bar
+//==============================================================================
+// The help bar + keyboard: under the boxes, or pinned to the bottom of a phone screen
+void BottomStrip::paint (juce::Graphics& g)
+{
+    g.fillAll (pal::bg);
+    const auto hintArea = getHintArea();
     g.setColour (pal::navy);
     g.fillRect (hintArea);
     g.setColour (pal::grey);
@@ -1835,6 +1869,27 @@ void MainPanel::paint (juce::Graphics& g)
     g.setColour (pal::bg);
     g.setFont (pixelFont (8.0f));
     g.drawText ("?", q.translated (1, 1), juce::Justification::centred);
+}
+
+void BottomStrip::resized()
+{
+    const auto hintArea = getHintArea();
+    hint.setBounds (hintArea.reduced (2).withTrimmedLeft (26).withTrimmedRight (176));
+    keysStatus.setBounds (hintArea.getRight() - 176, hintArea.getY() + 2, 172, hintArea.getHeight() - 4);
+    keyboard.setBounds (10, 34, 980, 70);
+}
+
+//==============================================================================
+// Phone layout (set by the editor): the strip lives outside the scrolling panel
+void MainPanel::setBottomStripDetached (bool shouldBeDetached)
+{
+    if (stripDetached == shouldBeDetached)
+        return;
+    stripDetached = shouldBeDetached;
+    if (! stripDetached)
+        addAndMakeVisible (bottomStrip);   // back under the boxes
+    help.toFront (false);
+    layoutBoxes();
 }
 
 void MainPanel::resized()
@@ -1910,12 +1965,12 @@ void MainPanel::layoutBoxes()
     }
     placeRow();
 
-    // The hint bar and the keyboard sit under the boxes
-    hintArea = { 10, y, 980, 28 };
-    hintLabel.setBounds (hintArea.reduced (2).withTrimmedLeft (26).withTrimmedRight (176));
-    keysStatus.setBounds (hintArea.getRight() - 176, hintArea.getY() + 2, 172, hintArea.getHeight() - 4);
-    keyboard.setBounds (10, y + 34, 980, 70);
-    const int newHeight = y + 34 + 70 + 6;
+    // The help bar + keyboard sit under the boxes (unless a phone screen pins them to the bottom)
+    if (stripDetached)
+        bottomStrip.setBounds (0, 0, baseWidth, BottomStrip::designHeight);   // the editor positions it (transform)
+    else
+        bottomStrip.setBounds (0, y, baseWidth, BottomStrip::designHeight);
+    const int newHeight = stripDetached ? y + 4 : y + BottomStrip::designHeight;
     help.setBounds (0, 0, baseWidth, newHeight);
     repaint();
 
@@ -2373,20 +2428,45 @@ BitBuddyEditor::BitBuddyEditor (BitBuddyProcessor& p)
     lnf.applyPaletteColours();
     themeEvents->addChangeListener (this);
 
-    setResizable (true, true);
+    // Phone layout: a scrolling page (swipe to scroll; knobs and drawings still drag normally)
+    viewport.setViewedComponent (&scrollContent, false);
+    viewport.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::nonHover);
+    viewport.setScrollBarsShown (true, false);
+    viewport.setWantsKeyboardFocus (false);
+    viewport.getVerticalScrollBar().setWantsKeyboardFocus (false);
+    viewport.getHorizontalScrollBar().setWantsKeyboardFocus (false);
+    viewport.getVerticalScrollBar().setColour (juce::ScrollBar::thumbColourId, bb::pal::light);
+    addChildComponent (viewport);
+
     createPanel();
+
+   #if JUCE_IOS || JUCE_ANDROID
+    // Phones and tablets: the screen decides the size - never ask for a bigger window
+    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        setSize (display->userArea.getWidth(), display->userArea.getHeight());
+    else
+        setSize (bb::MainPanel::baseWidth, bb::MainPanel::fullHeight);
+   #else
+    setResizable (true, true);
     fitWindowToPanel (bb::MainPanel::baseWidth);
+   #endif
 }
 
 void BitBuddyEditor::createPanel()
 {
+    phoneLayout = false;
     panel = std::make_unique<bb::MainPanel> (bitBuddy, lnf);
     panel->onDesignHeightChanged = [this]
     {
-        // Boxes were hidden / shown / moved: reshape the window once this layout pass is done
+        // Boxes were hidden / shown / moved: reshape the window (or, in the phone layout,
+        // just the scrolling page) once this layout pass is done
         juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<BitBuddyEditor> (this)]
         {
-            if (safe != nullptr)
+            if (safe == nullptr)
+                return;
+            if (safe->phoneLayout)
+                safe->resized();
+            else
                 safe->fitWindowToPanel (safe->getWidth());
         });
     };
@@ -2395,13 +2475,18 @@ void BitBuddyEditor::createPanel()
 
 void BitBuddyEditor::fitWindowToPanel (int width)
 {
-    const double ratio = (double) bb::MainPanel::baseWidth / (double) panel->getDesignHeight();
+   #if JUCE_IOS || JUCE_ANDROID
+    juce::ignoreUnused (width);   // the screen size is fixed: just re-fit the content
+   #else
+    // Computer: the window keeps the shape of everything you show (help bar + keyboard included)
+    const double ratio = (double) bb::MainPanel::baseWidth / (double) panel->getFullDesignHeight();
     setResizeLimits (600, juce::roundToInt (600.0 / ratio), 2000, juce::roundToInt (2000.0 / ratio));
     if (auto* sizeLimits = getConstrainer())
         sizeLimits->setFixedAspectRatio (ratio);
 
     width = juce::jlimit (600, 2000, width);
     setSize (width, juce::roundToInt (width / ratio));
+   #endif
     resized();
 }
 
@@ -2414,6 +2499,7 @@ BitBuddyEditor::~BitBuddyEditor()
 void BitBuddyEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     lnf.applyPaletteColours();
+    viewport.getVerticalScrollBar().setColour (juce::ScrollBar::thumbColourId, bb::pal::light);
     panel.reset();
     createPanel();
     fitWindowToPanel (getWidth());
@@ -2425,15 +2511,64 @@ void BitBuddyEditor::paint (juce::Graphics& g)
     g.fillAll (bb::pal::bg);
 }
 
+void BitBuddyEditor::setPhoneLayout (bool shouldUsePhoneLayout)
+{
+    if (shouldUsePhoneLayout == phoneLayout)
+        return;
+    phoneLayout = shouldUsePhoneLayout;
+
+    auto& strip = panel->getBottomStrip();
+    if (phoneLayout)
+    {
+        scrollContent.addAndMakeVisible (*panel);
+        panel->setBottomStripDetached (true);
+        addAndMakeVisible (strip);       // pinned to the bottom of the screen
+        viewport.setVisible (true);
+        panel->setBoxDraggingEnabled (false);
+    }
+    else
+    {
+        viewport.setVisible (false);
+        strip.setTransform ({});
+        panel->setBottomStripDetached (false);   // back under the boxes
+        addAndMakeVisible (*panel);
+        panel->setBoxDraggingEnabled (true);
+    }
+}
+
 void BitBuddyEditor::resized()
 {
-    if (panel == nullptr)
+    if (panel == nullptr || getWidth() <= 0 || getHeight() <= 0)
         return;
 
-    // Fit the design (1000 units wide, as tall as your boxes need) inside any window or phone screen, centred
-    const float w = (float) bb::MainPanel::baseWidth, h = (float) panel->getDesignHeight();
-    const float scale = juce::jmin ((float) getWidth() / w, (float) getHeight() / h);
-    panel->setTransform (juce::AffineTransform::scale (scale)
-                             .translated (((float) getWidth() - w * scale) * 0.5f, ((float) getHeight() - h * scale) * 0.5f));
+    const float width = (float) getWidth(), height = (float) getHeight();
+    const float designWidth = (float) bb::MainPanel::baseWidth;
+
+    // A short, wide screen (a phone held sideways) would shrink everything to a few pixels:
+    // fill the width instead, pin the keyboard to the bottom and scroll the rest
+    setPhoneLayout ((float) panel->getFullDesignHeight() * (width / designWidth) > height * 1.08f);
+
+    if (! phoneLayout)
+    {
+        // Fit the design (1000 units wide, as tall as your boxes need) inside the window, centred
+        const float h = (float) panel->getDesignHeight();
+        const float scale = juce::jmin (width / designWidth, height / h);
+        panel->setTransform (juce::AffineTransform::scale (scale)
+                                 .translated ((width - designWidth * scale) * 0.5f, (height - h * scale) * 0.5f));
+        panel->setBounds (0, 0, bb::MainPanel::baseWidth, panel->getDesignHeight());
+        return;
+    }
+
+    auto& strip = panel->getBottomStrip();
+    const float stripScale = width / designWidth;
+    const int stripHeight = juce::roundToInt ((float) bb::BottomStrip::designHeight * stripScale);
+    strip.setTransform (juce::AffineTransform::scale (stripScale).translated (0.0f, height - (float) stripHeight));
+
+    const int scrollBar = juce::jmax (10, juce::roundToInt (16.0f * stripScale));
+    const float scale = (width - (float) scrollBar) / designWidth;
+    viewport.setScrollBarThickness (scrollBar);
+    viewport.setBounds (0, 0, getWidth(), getHeight() - stripHeight);
+    panel->setTransform (juce::AffineTransform::scale (scale));
     panel->setBounds (0, 0, bb::MainPanel::baseWidth, panel->getDesignHeight());
+    scrollContent.setSize (getWidth() - scrollBar, juce::roundToInt ((float) panel->getDesignHeight() * scale));
 }

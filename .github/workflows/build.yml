@@ -133,10 +133,14 @@ jobs:
       - name: Generate the Android Studio project from android/BitBuddy.jucer
         run: xvfb-run -a "$(find build-projucer -type f -name Projucer -perm -u+x | head -1)" --resave android/BitBuddy.jucer
 
+      # Java 21 runs Gradle; the generated project also compiles against a Java 8 toolchain.
+      # Installing 8 here means Gradle never downloads it mid-build (that download can arrive corrupt).
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: 21
+          java-version: |
+            8
+            21
 
       - name: Android NDK + signing key
         run: |

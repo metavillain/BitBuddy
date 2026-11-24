@@ -7,6 +7,7 @@
 - **C64 filter**, **NES / Game Boy / C64 chip modes**
 - **My Presets**, per-section **dice**, **MUTATE**
 - **BIT** the dancing mascot, 4 colour themes, and boxes you can hide and move (**VIEW**)
+- **Phones:** a new phone layout - the keyboard stays at the bottom, swipe to scroll through the rest
 
 ## 🎮 Download BitBuddy
 

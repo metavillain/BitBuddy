@@ -49,6 +49,9 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 38 | User asked mid-way: hideable / movable boxes + VIEW menu | every section → `Box`; flow layout; window reshapes; layout saved | a PowerShell edit script carried on after an exception and deleted 141 lines (rebuilt from context; §4) |
 | 39 | Cleanup + efficiency pass (§8b) | idle back to 1.0 speed, 3 save/load paths → 1, 0 warnings | benchmark noise from other apps (§4) |
 | 40 | Mutation tests on the new code | 2/2 caught (drawing overwritten → 1 FAIL; knob changes ignored → 9 FAIL) | – |
+| 41 | Release run for v1.1.0 | held back (correctly): Mac RECORD test dropped audio (writer buffer too small), Android app quit after 1.4 s | – |
+| 42 | **User report: on an Android phone the UI is cut off - no scrolling, no resizing** | root cause: desktop window rules (minimum size, fixed shape) applied on a phone screen that is only ~411 pt tall | the most important bug of the release; found by the user, not by CI |
+| 43 | Phone layout: keyboard + help pinned, page scrolls by swipe; phones never get a forced window size | UI test at 914 × 411 + phone snapshots; 11/11 | a desktop test window's shape lock and an async re-fit both interfered with the test (§4) |
 
 ---
 
@@ -80,6 +83,8 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
 15. **Fixed layout or customisable?** Hideable / movable boxes were asked for after 9 features were built
     with absolute positions; every section had to be turned into a box. Building sections as self-contained
     components from day one makes this nearly free.
+17. **Which phone / tablet will you use, and can you try a test build on it early?** An emulator smoke test
+    only proves the app *starts*; it can't tell you a phone screen is unusable. The user's phone did.
 16. **Which features belong in the app only?** (Jam, Record: a DAW already has tracks and recording.)
     Decide before the UI is laid out, so the plugin view doesn't show dead controls.
 
@@ -182,6 +187,13 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
   constructing the processor shows app-only UI (JAM / REC) in snapshots and UI tests.
 - **Tests must not touch the user's settings:** BitBuddy's settings file (theme, layout) has a test override
   (`bb::useSettingsFile`).
+- **Desktop window rules break phones:** `setResizeLimits` minimums and a fixed aspect ratio made the Android
+  window taller than a sideways phone screen (~411 pt) - the keyboard was cut off and nothing scrolls. On
+  iOS / Android never set a size or limits; fit the screen. For short screens use a scrolling page with the
+  keyboard pinned (`Viewport` + `ScrollOnDragMode::nonHover` + `setViewportIgnoreDragFlag` on knobs).
+- **Gradle downloads a Java 8 toolchain mid-build** for Projucer Android projects; that download can arrive
+  corrupt ("Cannot expand TAR"). Install Java 8 *and* 21 with `actions/setup-java` up front.
+- **Smoke tests only prove "it starts"**: get the app onto a real device early for a usability check.
 - **After changing the version, delete `build/BitBuddy_artefacts/JuceLibraryCode/BitBuddy_resources.rc`:** JUCE
   doesn't regenerate the Windows version resource, so the exe's file properties kept saying 1.0.1 (the plugin
   code and VST3 moduleinfo did say 1.1.0). Clean CI builds are fine.

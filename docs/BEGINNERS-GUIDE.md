@@ -207,6 +207,10 @@ triangle can't fade. It's how the old music really sounded (try *Real NES Lead*)
 preset menu). The little **dice** on each box re-rolls just that part. **MUTATE** nudges every knob a
 little - press it a few times to let a sound evolve.
 
+**On a phone.** Hold it sideways. The keyboard and the help bar stay at the bottom of the screen;
+swipe up and down on the rest to reach every box (dragging a knob still turns it). Tap any control to
+see what it does. Hide the boxes you don't use with **VIEW** to make the page shorter.
+
 **Make it yours.** Click **BIT** (the little chip next to VIEW - it dances when you play) to change the
 colours: Sweetie 16, Game Boy, Amber CRT or NES. Use **VIEW** to hide boxes you don't use, and drag a
 box by its title bar to move it. Hidden boxes keep working; VIEW tells you if one is still changing

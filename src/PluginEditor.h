@@ -311,6 +311,27 @@ private:
 };
 
 //==============================================================================
+/** The help bar + keyboard (1000 x 110 units). Normally under the boxes; on a
+    phone screen the editor pins it to the bottom so you can always play. */
+class BottomStrip : public juce::Component
+{
+public:
+    static constexpr int designHeight = 110;
+
+    BottomStrip (juce::Label& hintLabel, juce::Label& keysStatusLabel, juce::Component& keyboardComponent)
+        : hint (hintLabel), keysStatus (keysStatusLabel), keyboard (keyboardComponent) {}
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    static juce::Rectangle<int> getHintArea() { return { 10, 0, 980, 28 }; }
+    juce::Label& hint;
+    juce::Label& keysStatus;
+    juce::Component& keyboard;
+};
+
+//==============================================================================
 /** Everything you see. 1000 units wide (scaled to the window); its height depends
     on which boxes are shown (778 with all of them). */
 class MainPanel : public juce::Component, private juce::Timer
@@ -336,6 +357,15 @@ public:
     void moveBox (const juce::String& id, int newIndex);
     void resetLayout();
     juce::StringArray getBoxOrder() const { return boxOrder; }
+
+    //==========================================================================
+    // Phone layout: the editor pins the help bar + keyboard to the bottom of the
+    // screen and scrolls the rest (dragging boxes around is off there)
+    BottomStrip& getBottomStrip() noexcept { return bottomStrip; }
+    void setBottomStripDetached (bool);
+    bool isBottomStripDetached() const noexcept { return stripDetached; }
+    int getFullDesignHeight() const noexcept    { return stripDetached ? designHeight - 4 + BottomStrip::designHeight : designHeight; }
+    void setBoxDraggingEnabled (bool shouldBeEnabled) noexcept { boxDraggingEnabled = shouldBeEnabled; }
 
 private:
     void layoutBoxes();
@@ -443,14 +473,15 @@ private:
 
     juce::Label hintLabel;
     juce::Label keysStatus;
+    bool stripDetached = false, boxDraggingEnabled = true;
     juce::String lastKeysStatus;
     ChipKeyboard keyboard;
+    BottomStrip bottomStrip { hintLabel, keysStatus, keyboard };
     HelpOverlay help;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> chordAtt, patternAtt, speedAtt, echoTimeAtt,
                                                                             keyAtt, scaleAtt;
 
-    juce::Rectangle<int> hintArea;
     int lastWave = -1, lastArpMode = -1, lastScaleState = -1;
     juce::String lastPresetName;
     bool lastWasUserPreset = false;
@@ -471,10 +502,14 @@ private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;   // colour theme changed: rebuild in the new colours
     void createPanel();
     void fitWindowToPanel (int width);   // window shape follows the boxes you show
+    void setPhoneLayout (bool);          // short, wide screens: keyboard pinned at the bottom, the rest scrolls
 
     BitBuddyProcessor& bitBuddy;
     bb::RetroLookAndFeel lnf;
     juce::SharedResourcePointer<bb::ThemeEvents> themeEvents;
+    juce::Viewport viewport;              // phone layout only
+    juce::Component scrollContent;
+    bool phoneLayout = false;
     std::unique_ptr<bb::MainPanel> panel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BitBuddyEditor)

@@ -1375,6 +1375,22 @@ static int runSnapshot (const File& outDir)
             panel->resetLayout();
         }
     }
+
+    // A phone held sideways: top of the page, and scrolled to the bottom
+    {
+        selectProgram (proc, "Smart Chords");
+        std::unique_ptr<AudioProcessorEditor> editor (proc.createEditor());
+        editor->setVisible (true);
+        editor->setSize (914, 411);
+        MessageManager::getInstance()->runDispatchLoopUntil (400);
+        writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), outDir.getChildFile ("ui-phone.png"));
+        if (auto* viewport = findComponent<Viewport> (*editor))
+        {
+            viewport->setViewPosition (0, viewport->getViewedComponent()->getHeight());
+            MessageManager::getInstance()->runDispatchLoopUntil (200);
+            writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), outDir.getChildFile ("ui-phone-scrolled.png"));
+        }
+    }
     return 0;
 }
 
@@ -1514,6 +1530,38 @@ static int runFocusTest()
         res.check (false, "Boxes: hide, move, reset", "MainPanel not found");
     }
 
+    // 1c. Phone held sideways (914 x 411): keyboard pinned to the bottom, the rest scrolls
+    if (SystemStats::getEnvironmentVariable ("BB_SKIP_PHONE_TEST", {}).isEmpty())
+    {
+        auto settle = [] { MessageManager::getInstance()->runDispatchLoopUntil (250); };
+        const auto desktopSize = editor->getBounds();
+        if (auto* constrainer = editor->getConstrainer())   // a phone screen has no window-shape lock
+            constrainer->setFixedAspectRatio (0.0);
+        editor->setResizeLimits (100, 100, 4000, 4000);
+        editor->setSize (914, 411);
+        settle();
+        auto* viewport = findComponent<Viewport> (*editor);
+        auto* strip = findComponent<bb::BottomStrip> (*editor);
+        const bool scrolling = viewport != nullptr && viewport->isVisible()
+                            && viewport->getViewedComponent()->getHeight() > viewport->getHeight();
+        const auto stripArea = strip != nullptr ? editor->getLocalArea (strip, strip->getLocalBounds()) : Rectangle<int>();
+        const bool pinned = strip != nullptr && strip->getParentComponent() == editor.get()
+                         && std::abs (stripArea.getBottom() - 411) <= 1 && stripArea.getWidth() >= 912;
+        auto* knob = findComponent<Slider> (*editor);
+        const bool knobsTurn = knob != nullptr && knob->getParentComponent() != nullptr
+                            && knob->getParentComponent()->getViewportIgnoreDragFlag();
+
+        editor->setBounds (desktopSize);
+        settle();
+        MessageManager::getInstance()->runDispatchLoopUntil (1000);
+        const bool backToNormal = (viewport == nullptr || ! viewport->isVisible()) && strip != nullptr
+                               && dynamic_cast<bb::MainPanel*> (strip->getParentComponent()) != nullptr;
+        res.check (scrolling && pinned && knobsTurn && backToNormal,
+                   "Phone screen: keyboard pinned, boxes scroll, knobs still turn; desktop size restores",
+                   String (scrolling ? "scrolls" : "NO SCROLL") + ", strip " + stripArea.toString()
+                       + (knobsTurn ? ", knobs ok" : ", KNOBS SCROLL") + (backToNormal ? ", restored" : ", NOT RESTORED"));
+    }
+
     auto* peer = editor->getPeer();
     if (peer == nullptr || piano == nullptr || ! peer->isFocused())
     {
@@ -1545,7 +1593,15 @@ static int runFocusTest()
 
         if (String (what).contains ("SAW"))   // prove the simulated clicks really land
             res.check (roundToInt (proc.apvts.getRawParameterValue ("wave")->load()) == 4,
-                       "Simulated click selected the SAW wave", "");
+                       "Simulated click selected the SAW wave",
+                       "wave " + String (proc.apvts.getRawParameterValue ("wave")->load()) + ", button at "
+                           + editor->getLocalArea (target, target->getLocalBounds()).toString() + " in editor "
+                           + editor->getBounds().toString() + ", component there: "
+                           + [&]
+                             {
+                                 auto* hit = editor->getComponentAt (editor->getLocalPoint (target, target->getLocalBounds().getCentre()));
+                                 return hit != nullptr ? String (typeid (*hit).name()) + " '" + hit->getName() + "'" : String ("none");
+                             }());
     }
 
     // 3. Open and close a drop-down menu: focus must come back by itself
