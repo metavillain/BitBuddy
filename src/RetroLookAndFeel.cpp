@@ -73,8 +73,10 @@ static juce::File& settingsFileOverride()
 
 static std::unique_ptr<juce::PropertiesFile> openSettings()
 {
+    // Its own file name: the JUCE app wrapper keeps *its* settings in "BitBuddy.settings", and on
+    // Android / Linux both would otherwise land in the same ".BitBuddy" folder and overwrite each other
     juce::PropertiesFile::Options options;
-    options.applicationName = "BitBuddy";
+    options.applicationName = "BitBuddy Preferences";
     options.filenameSuffix = "settings";
     options.folderName = "BitBuddy";
     options.osxLibrarySubFolder = "Application Support";

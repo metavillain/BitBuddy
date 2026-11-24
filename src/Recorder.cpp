@@ -49,7 +49,9 @@ bool Recorder::start (double newSampleRate)
     sequence.clear();
     fifo.reset();
     samplesWritten = 0;
-    threadedWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter> (writer.release(), writerThread, 32768);
+    // 4 seconds of buffer: even a slow disk or a busy computer can't make the recording drop sound
+    threadedWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter> (writer.release(), writerThread,
+                                                                                juce::roundToInt (sampleRate * 4.0));
     {
         const juce::ScopedLock sl (writerLock);
         activeWriter = threadedWriter.get();

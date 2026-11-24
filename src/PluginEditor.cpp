@@ -1161,7 +1161,8 @@ bool ChipKeyboard::keyPressed (const juce::KeyPress& key)
 
 void ChipKeyboard::resized()
 {
-    setKeyWidth ((float) getWidth() / 36.0f);   // 36 white keys between note 36 and 96
+    if (getWidth() > 0)
+        setKeyWidth ((float) getWidth() / 36.0f);   // 36 white keys between note 36 and 96
     juce::MidiKeyboardComponent::resized();
 }
 
