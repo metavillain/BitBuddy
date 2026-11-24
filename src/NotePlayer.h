@@ -23,7 +23,7 @@ public:
         double start, length;   // seconds
         int note;               // MIDI note number
         float velocity;         // 0..1
-        int channel = 1;        // 1 = your sound; 2.. = the song player's band
+        int channel = 1;        // 1 = your sound, 16 = your sound without Scale Lock, 2..15 = the song band
     };
 
     /** UI thread: plays these notes, starting now (whatever was playing stops). */
@@ -36,8 +36,8 @@ public:
     double getPosition() const noexcept { return positionSeconds.load(); }   // seconds into the list
     double getLength() const noexcept   { return lengthSeconds.load(); }
 
-    /** Audio thread: adds this block's note-ons and note-offs. Channel 1 goes to
-        `main`, other channels to `band` (dropped when band is nullptr). */
+    /** Audio thread: adds this block's note-ons and note-offs. Channels 1 and 16 go to
+        `main`, the others to `band` (dropped when band is nullptr). */
     void addEvents (juce::MidiBuffer& main, juce::MidiBuffer* band, int numSamples, double sampleRate) noexcept;
 
 private:

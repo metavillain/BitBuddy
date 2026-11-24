@@ -188,7 +188,7 @@ void ChipEngine::setParams (const EngineParams& np)
 // note (C# -> C in C major). Remember which, so its note-off stops the right
 // note even if you change the scale while holding it. Two keys can land on
 // the same note: it keeps sounding until both are released.
-void ChipEngine::noteOn (int key, float velocity)
+void ChipEngine::noteOn (int key, float velocity, bool useScaleLock)
 {
     if (key < 0 || key > 127)
         return;
@@ -206,7 +206,7 @@ void ChipEngine::noteOn (int key, float velocity)
             stopNote (old);
     }
 
-    const int note = p.wave == Wave::Drums ? key : snapToScale (key, p.scaleKey, p.scale);
+    const int note = (p.wave == Wave::Drums || ! useScaleLock) ? key : snapToScale (key, p.scaleKey, p.scale);
     playedAs[(size_t) key] = (std::int8_t) note;
     if (keyCount[(size_t) note] < 255)
         ++keyCount[(size_t) note];

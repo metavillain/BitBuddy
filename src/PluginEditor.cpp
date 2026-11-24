@@ -792,6 +792,112 @@ void VoiceBox::useVoice()
 
 
 //==============================================================================
+SongBox::SongBox (BitBuddyProcessor& p)
+    : Box ("song", "9", "MIDI SONGS  (ANY SONG, CHIPTUNE STYLE)", pal::green, 980, 62), proc (p)
+{
+    openButton.setTooltip ("OPEN MIDI: pick any MIDI file (.mid) - BitBuddy plays it like an NES tune: the melody with YOUR "
+                           "sound, the bass on a triangle, the rest on a pulse wave, drums on the drum kit. "
+                           "Change your sound while it plays!");
+    openButton.setColour (juce::TextButton::buttonColourId, pal::green);
+    openButton.onClick = [this] { openMidi(); };
+
+    playButton.setTooltip ("PLAY / STOP the song.");
+    playButton.onClick = [this]
+    {
+        if (playing)
+        {
+            proc.notePlayer.stop();
+            playing = false;
+        }
+        else if (! song.notes.empty())
+        {
+            playSong (song);
+        }
+        else
+        {
+            openMidi();
+        }
+    };
+
+    title.setFont (textFont (14.0f, true));
+    title.setColour (juce::Label::textColourId, pal::light);
+    title.setText ("Open a MIDI file and hear it chiptune style!", juce::dontSendNotification);
+    title.setMinimumHorizontalScale (0.7f);
+    for (auto* c : { (juce::Component*) &openButton, (juce::Component*) &playButton, (juce::Component*) &title })
+        addAndMakeVisible (c);
+    startTimerHz (10);
+}
+
+void SongBox::layoutContent (juce::Rectangle<int> area)
+{
+    auto row = area.reduced (2, 2).removeFromTop (26);
+    openButton.setBounds (row.removeFromLeft (120).reduced (2, 0));
+    playButton.setBounds (row.removeFromLeft (84).reduced (2, 0));
+    row.removeFromLeft (8);
+    title.setBounds (row.removeFromLeft (row.getWidth() / 2));
+    progressArea = row.reduced (6, 8);
+    repaint();
+}
+
+void SongBox::paint (juce::Graphics& g)
+{
+    Box::paint (g);
+    if (progressArea.isEmpty())
+        return;
+    g.setColour (pal::dark);
+    g.fillRect (progressArea);
+    const double length = song.seconds > 0.0 ? song.seconds : 1.0;
+    const double done = playing ? juce::jlimit (0.0, 1.0, proc.notePlayer.getPosition() / length) : 0.0;
+    g.setColour (accent);
+    g.fillRect (progressArea.withWidth (juce::roundToInt (progressArea.getWidth() * done)));
+}
+
+void SongBox::timerCallback()
+{
+    if (playing && ! proc.notePlayer.isPlaying())   // the end (or a sound effect / jingle took over)
+        playing = false;
+    playButton.setButtonText (playing ? "STOP" : "PLAY");
+
+    if (! song.notes.empty())
+    {
+        auto time = [] (double s) { return juce::String::formatted ("%d:%02d", (int) s / 60, (int) s % 60); };
+        title.setText (song.name + "   " + (playing ? time (proc.notePlayer.getPosition()) + " / " : juce::String())
+                           + time (song.seconds), juce::dontSendNotification);
+    }
+    if (playing)
+        repaint (progressArea);
+}
+
+void SongBox::playSong (const SongArrangement& newSong)
+{
+    song = newSong;
+    proc.notePlayer.play (song.notes);
+    playing = true;
+    title.setTooltip (song.parts);
+    say (song.name + ":  " + song.parts);
+}
+
+void SongBox::openMidi()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Pick a MIDI song", juce::File(), "*.mid;*.midi");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [safe = juce::Component::SafePointer<SongBox> (this)] (const juce::FileChooser& fc)
+    {
+        if (safe == nullptr || fc.getURLResults().isEmpty())
+            return;
+        const auto url = fc.getURLResult();
+        auto stream = url.createInputStream (juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress));
+        const auto name = juce::File::createFileWithoutCheckingPath (url.getFileName()).getFileNameWithoutExtension();
+        const auto song = stream != nullptr ? arrangeMidiSong (*stream, name) : SongArrangement {};
+        if (song.notes.empty())
+            safe->say ("BitBuddy couldn't find any notes in that file. Is it a MIDI file (.mid)?");
+        else
+            safe->playSong (song);
+    });
+}
+
+
+//==============================================================================
 WaveButton::WaveButton (int index, const juce::String& shortName, juce::Colour c)
     : juce::Button (shortName), waveIndex (index), accent (c)
 {
@@ -1759,6 +1865,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
       filterBox (p.apvts),
       gameBox (p),
       voiceBox (p),
+      songBox (p),
       keyboard (p.keyboardState)
 {
     // --- header ---
@@ -2099,6 +2206,8 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
 
     // Boxes can be hidden (their "x") and moved (drag the title bar)
     allBoxes = { &soundBox, &screenBox, &shapeBox, &chordsBox, &movementBox, &crunchBox, &filterBox, &playBox, &gameBox, &voiceBox };
+    if (proc.isStandaloneApp())
+        allBoxes.push_back (&songBox);   // MIDI songs: the app only (in a DAW, the DAW plays MIDI files)
     for (auto* box : allBoxes)
     {
         box->onHide = [this] (Box& b) { setBoxVisible (b.getId(), false); };
@@ -2129,7 +2238,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     diceShown = loadSetting ("showDice", "1") != "0";   // VIEW > Show dice buttons
     for (auto* box : allBoxes)
         box->setDiceShown (diceShown);
-    gameBox.onMessage = voiceBox.onMessage = [this] (const juce::String& text) { showHint (text); };
+    gameBox.onMessage = voiceBox.onMessage = songBox.onMessage = [this] (const juce::String& text) { showHint (text); };
 
     // --- bottom ---
     hintLabel.setFont (textFont (15.0f));
@@ -2320,7 +2429,7 @@ namespace
 {
 juce::StringArray defaultBoxOrder()
 {
-    return { "sound", "screen", "shape", "chords", "movement", "crunch", "filter", "play", "game", "voice" };
+    return { "sound", "screen", "shape", "chords", "movement", "crunch", "filter", "play", "game", "voice", "song" };
 }
 } // namespace
 
@@ -2930,12 +3039,17 @@ BitBuddyEditor::BitBuddyEditor (BitBuddyProcessor& p)
    #if JUCE_IOS || JUCE_ANDROID
     // Phones and tablets: the screen decides the size - never ask for a bigger window
     if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
-        setSize (display->userArea.getWidth(), display->userArea.getHeight());
+        setSize (juce::roundToInt (display->userBounds.getWidth()), juce::roundToInt (display->userBounds.getHeight()));
     else
         setSize (bb::MainPanel::baseWidth, bb::MainPanel::fullHeight);
    #else
     setResizable (true, true);
-    fitWindowToPanel (bb::MainPanel::baseWidth);
+    // Start as big as the design, but never taller than 90% of the screen (laptops!)
+    int width = bb::MainPanel::baseWidth;
+    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        width = juce::jmin (width, juce::roundToInt (display->userBounds.getHeight() * 0.9 * bb::MainPanel::baseWidth
+                                                     / panel->getFullDesignHeight()));
+    fitWindowToPanel (width);
    #endif
 }
 

@@ -12,6 +12,7 @@
 #include "NotePlayer.h"
 #include "VoiceSample.h"
 #include "HumTracker.h"
+#include "SongPlayer.h"
 #include "Recorder.h"
 
 // Lock-free ring buffer so the UI "screen" can show the live waveform.
@@ -199,6 +200,9 @@ private:
     std::array<bb::ChannelFx, 2> fx;   // [0] = mono / left, [1] = right (STEREO Wide only)
     bb::PingPongEcho echo;
     bb::JamBand jam;
+    bb::SongBand songBand;                 // MIDI songs: bass, chords, drums
+    juce::MidiBuffer bandMidi;
+    juce::AudioBuffer<float> bandBuffer;
     std::atomic<bool> jamOn { false };
     std::atomic<int> jamStyle { 0 };
     std::atomic<float> jamTempo { 120.0f };

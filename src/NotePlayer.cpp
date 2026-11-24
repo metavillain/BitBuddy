@@ -47,7 +47,7 @@ void NotePlayer::releaseAll (juce::MidiBuffer& main, juce::MidiBuffer* band) noe
 {
     for (int ch = 0; ch < 16; ++ch)
     {
-        auto* dest = ch == 0 ? &main : band;
+        auto* dest = (ch == 0 || ch == 15) ? &main : band;
         if (dest != nullptr && sounding[(size_t) ch].any())
             for (int note = 0; note < 128; ++note)
                 if (sounding[(size_t) ch][(size_t) note])
@@ -88,7 +88,7 @@ void NotePlayer::addEvents (juce::MidiBuffer& main, juce::MidiBuffer* band, int 
 
         const int offset = juce::jlimit (0, numSamples - 1, (int) (at - posSamples));
         const auto ch = (size_t) (e.channel - 1);
-        auto* dest = e.channel == 1 ? &main : band;
+        auto* dest = (e.channel == 1 || e.channel == 16) ? &main : band;
         if (e.on)
         {
             if (dest != nullptr)

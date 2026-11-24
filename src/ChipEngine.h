@@ -116,7 +116,7 @@ public:
     void prepare (double sampleRate);
     void setParams (const EngineParams& newParams);
 
-    void noteOn (int note, float velocity);   // velocity 0..1
+    void noteOn (int note, float velocity, bool useScaleLock = true);   // velocity 0..1
     void noteOff (int note);
     void allNotesOff (bool immediate);
     void setPitchBend (float semitones) noexcept { pitchBend = semitones; }

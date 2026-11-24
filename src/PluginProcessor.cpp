@@ -261,7 +261,7 @@ bool BitBuddyProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
     return layouts.getMainInputChannelSet().isDisabled();
 }
 
-void BitBuddyProcessor::prepareToPlay (double sampleRate, int)
+void BitBuddyProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     renderRate = sampleRate > 0.0 ? sampleRate : 44100.0;
     engine.prepare (sampleRate);
@@ -269,6 +269,9 @@ void BitBuddyProcessor::prepareToPlay (double sampleRate, int)
         f.prepare (sampleRate);
     echo.prepare (sampleRate);
     jam.prepare (sampleRate);
+    songBand.prepare (sampleRate);
+    bandBuffer.setSize (1, juce::jmax (512, samplesPerBlock));
+    bandMidi.ensureSize (2048);
     effectsIdle = true;
     echoWasOn = filterWasOn = wideWasOn = false;
     swingPhase = 0.0;
@@ -361,8 +364,8 @@ int BitBuddyProcessor::idxOf (std::atomic<float>* p, int maxIndex) noexcept
 
 void BitBuddyProcessor::handleMidi (const juce::MidiMessage& m)
 {
-    if (m.isNoteOn())
-        engine.noteOn (m.getNoteNumber(), m.getFloatVelocity());
+    if (m.isNoteOn())   // (a MIDI song's melody comes on channel 16: songs have their own key, so no Scale Lock)
+        engine.noteOn (m.getNoteNumber(), m.getFloatVelocity(), m.getChannel() != bb::SongBand::leadChannel);
     else if (m.isNoteOff())
         engine.noteOff (m.getNoteNumber());
     else if (m.isAllSoundOff())
@@ -394,7 +397,8 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // Merge notes played on the on-screen keyboard
     keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
     // ...and sound effects / jingles / songs started from the UI
-    notePlayer.addEvents (midi, nullptr, numSamples, renderRate);
+    bandMidi.clear();
+    notePlayer.addEvents (midi, &bandMidi, numSamples, renderRate);
     humTracker.popEvents ([&midi] (int note, bool on, float velocity)
     {
         midi.addEvent (on ? juce::MidiMessage::noteOn (1, note, velocity) : juce::MidiMessage::noteOff (1, note), 0);
@@ -446,9 +450,20 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         jamOn.load() ? jam.start() : jam.stop();
     const bool useJam = jam.isSounding();
 
+    // A MIDI song's band (also mixed in after your effects)
+    if (bandBuffer.getNumSamples() < numSamples)
+        bandBuffer.setSize (1, numSamples, false, false, true);   // (only if the host sends a bigger block than it said)
+    bool useBand = false;
+    if (! bandMidi.isEmpty() || songBand.isSounding())
+    {
+        bandBuffer.clear (0, 0, numSamples);
+        useBand = songBand.render (bandBuffer.getWritePointer (0), numSamples, bandMidi);
+    }
+    const float* band = bandBuffer.getReadPointer (0);
+
     // 2. Nothing playing and every effect tail has died away? The cleared buffer
     //    is already the right answer, so an idle BitBuddy costs (almost) nothing.
-    if (! engineActive && effectsIdle && ! useJam)
+    if (! engineActive && effectsIdle && ! useJam && ! useBand)
     {
         outputGain.skip (numSamples);
         scope.pushSilence (numSamples);
@@ -528,9 +543,14 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         r *= g;
         if (useJam)
         {
-            const float band = jam.nextSample();
-            l += band;
-            r += band;
+            const float jamSample = jam.nextSample();
+            l += jamSample;
+            r += jamSample;
+        }
+        if (useBand)
+        {
+            l += 0.5f * band[i];
+            r += 0.5f * band[i];
         }
 
         l = softLimit (l);   // gentle safety limiter: big chords round off instead of crackling

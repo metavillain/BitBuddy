@@ -229,6 +229,31 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
 };
 
+/** 9. SONGS (added in 1.2, BitBuddy app): play any MIDI file the chiptune way. */
+class SongBox : public Box, private juce::Timer
+{
+public:
+    explicit SongBox (BitBuddyProcessor&);
+    std::function<void (const juce::String&)> onMessage;
+    /** Plays a song (OPEN MIDI calls this; so can tests). */
+    void playSong (const SongArrangement&);
+
+private:
+    void layoutContent (juce::Rectangle<int>) override;
+    void paint (juce::Graphics&) override;
+    void timerCallback() override;
+    void openMidi();
+    void say (const juce::String& text) { if (onMessage != nullptr) onMessage (text); }
+
+    BitBuddyProcessor& proc;
+    SongArrangement song;
+    bool playing = false;
+    juce::TextButton openButton { "OPEN MIDI" }, playButton { "PLAY" };
+    juce::Label title;
+    juce::Rectangle<int> progressArea;
+    std::unique_ptr<juce::FileChooser> chooser;
+};
+
 /** Retro green "screen" that shows the live waveform. */
 class Scope : public juce::Component, public juce::SettableTooltipClient
 {
@@ -406,7 +431,7 @@ private:
 class MainPanel : public juce::Component, private juce::Timer
 {
 public:
-    static constexpr int baseWidth = 1000, fullHeight = 902;
+    static constexpr int baseWidth = 1000, fullHeight = 970;
 
     MainPanel (BitBuddyProcessor&, RetroLookAndFeel&);
     ~MainPanel() override;
@@ -531,6 +556,7 @@ private:
     FilterBox filterBox;
     GameSoundsBox gameBox;
     VoiceBox voiceBox;
+    SongBox songBox;
 
     // play along: Scale Lock
     juce::ComboBox keyBox, scaleBox;

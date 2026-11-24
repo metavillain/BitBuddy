@@ -37,6 +37,7 @@ set(BITBUDDY_SOURCES
     src/VoiceSample.cpp
     src/HumTracker.cpp
     src/MicInput.cpp
+    src/SongPlayer.cpp
     src/RetroLookAndFeel.cpp)
 
 # JUCE features BitBuddy never uses. Leaving them out keeps the binaries small.

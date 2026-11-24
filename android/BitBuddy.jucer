@@ -48,6 +48,8 @@
       <FILE id="BbF027" name="HumTracker.h" compile="0" resource="0" file="../src/HumTracker.h"/>
       <FILE id="BbF028" name="MicInput.cpp" compile="1" resource="0" file="../src/MicInput.cpp"/>
       <FILE id="BbF029" name="MicInput.h" compile="0" resource="0" file="../src/MicInput.h"/>
+      <FILE id="BbF030" name="SongPlayer.cpp" compile="1" resource="0" file="../src/SongPlayer.cpp"/>
+      <FILE id="BbF031" name="SongPlayer.h" compile="0" resource="0" file="../src/SongPlayer.h"/>
     </GROUP>
     <GROUP id="BbG003" name="assets">
       <FILE id="BbFont" name="PressStart2P-Regular.ttf" compile="0" resource="1" file="../assets/PressStart2P-Regular.ttf"/>

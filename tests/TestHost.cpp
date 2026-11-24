@@ -14,6 +14,7 @@
 #include "../src/PluginEditor.h"
 #include "../src/Presets.h"
 #include "../src/GameSounds.h"
+#include "../src/SongPlayer.h"
 #include <set>
 
 #include <chrono>
@@ -1508,6 +1509,85 @@ static int runTests (const String& path)
                    String (keptInProject ? "project ok" : "PROJECT LOST") + ", " + (keptByPreset ? "preset kept it" : "PRESET REPLACED IT")
                        + ", " + (silentRefused ? "silence refused" : "SILENCE ACCEPTED") + ", default "
                        + String (fresh.getVoiceSample().getLength() / bb::VoiceSample::rate, 2) + " s");
+    }
+
+    // ---- 15. 1.2: MIDI songs ------------------------------------------------------
+    std::cout << "\n  -- midi songs --\n";
+    {
+        // A little 4-part song: melody, bass, pads and drums (120 BPM, 480 ticks per beat)
+        MidiFile file;
+        file.setTicksPerQuarterNote (480);
+        MidiMessageSequence tempo;
+        tempo.addEvent (MidiMessage::tempoMetaEvent (500000), 0);
+        file.addTrack (tempo);
+        std::vector<std::array<int, 3>> melody, bass, pads, drums;
+        for (int i = 0; i < 16; ++i) melody.push_back ({ i * 240, 200, 72 + (i % 4) * 2 + (i == 5 ? 1 : 0) });   // (one C#)
+        for (int i = 0; i < 8; ++i)  bass.push_back ({ i * 480, 400, 36 + (i % 2) * 7 });
+        for (int i = 0; i < 4; ++i)  for (int n : { 60, 64, 67 }) pads.push_back ({ i * 960, 900, n });
+        for (int i = 0; i < 16; ++i) drums.push_back ({ i * 240, 60, i % 4 == 0 ? 36 : (i % 4 == 2 ? 38 : 42) });
+        auto add = [&] (const String& name, int ch, const std::vector<std::array<int, 3>>& v /* tick, length, note */)
+        {
+            MidiMessageSequence seq;
+            seq.addEvent (MidiMessage::textMetaEvent (3, name), 0);
+            for (auto& n : v)
+            {
+                seq.addEvent (MidiMessage::noteOn (ch, n[2], 0.8f), n[0]);
+                seq.addEvent (MidiMessage::noteOff (ch, n[2]), n[0] + n[1]);
+            }
+            seq.updateMatchedPairs();
+            file.addTrack (seq);
+        };
+        add ("Pads", 3, pads);      // (in a jumbled order: the arranger has to work out who is who)
+        add ("Drums", 10, drums);
+        add ("Melody", 1, melody);
+        add ("Bass", 2, bass);
+
+        const auto song = bb::arrangeMidiSong (file, "Test Song");
+        int kitOk = 0;
+        for (auto& n : song.notes)
+            if (n.channel == bb::SongBand::drumsChannel)
+                kitOk += (n.note == 36 || n.note == 38 || n.note == 42) ? 1 : 0;
+        res.check (song.lead == 16 && song.bass == 8 && song.chords == 12 && song.drums == 16 && kitOk == 16
+                       && std::abs (song.seconds - 4.0) < 0.1 && song.parts.contains ("Melody") && song.parts.contains ("Bass"),
+                   "MIDI SONG: melody -> your sound, lowest part -> triangle bass, rest -> chords, ch. 10 -> drum kit",
+                   "lead " + String (song.lead) + ", bass " + String (song.bass) + ", chords " + String (song.chords) + ", drums "
+                       + String (song.drums) + " (" + String (kitOk) + " mapped), " + String (song.seconds, 2) + " s | " + song.parts);
+
+        // It plays: band + melody together, then everything stops
+        auto procPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
+        auto& proc = *procPtr;
+        proc.selectPreset (0);
+        auto run = [&] (double seconds)
+        {
+            proc.prepareToPlay (sr, 512);
+            AudioBuffer<float> result (2, (int) (seconds * sr)), blk (2, 512);
+            result.clear();
+            for (int pos = 0; pos + 512 <= result.getNumSamples(); pos += 512)
+            {
+                MidiBuffer midi;
+                blk.clear();
+                proc.processBlock (blk, midi);
+                result.copyFrom (0, pos, blk, 0, 0, 512);
+            }
+            return result;
+        };
+        proc.notePlayer.play (song.notes);
+        const auto out = run (5.0);
+        const float playingPeak = peakOf (out, 0.5, 3.5, sr), endPeak = peakOf (out, 4.8, 5.0, sr);
+        res.check (allFinite (out) && playingPeak > 0.1f && playingPeak < 1.0f && endPeak < 1.0e-4f && ! proc.notePlayer.isPlaying(),
+                   "MIDI SONG: plays (band + melody), stays below 0 dBFS, then stops",
+                   "peak " + String (playingPeak, 2) + ", after the end " + String (Decibels::gainToDecibels (endPeak), 1) + " dB");
+
+        // Songs have their own key: the melody skips Scale Lock (your own keys still snap)
+        proc.apvts.getParameter ("scale")->setValueNotifyingHost (proc.apvts.getParameter ("scale")->convertTo0to1 (1.0f));   // C major
+        proc.notePlayer.play ({ { 0.0, 1.0, 61, 0.9f, bb::SongBand::leadChannel } });
+        const double songCSharp = pitchAt (run (1.0), 0.3, 8192, sr);
+        proc.notePlayer.play ({ { 0.0, 1.0, 61, 0.9f, 1 } });
+        const double keyCSharp = pitchAt (run (1.0), 0.3, 8192, sr);
+        proc.apvts.getParameter ("scale")->setValueNotifyingHost (0.0f);
+        res.check (std::abs (centsOff (songCSharp, midiToHz (61))) < 10.0 && std::abs (centsOff (keyCSharp, midiToHz (60))) < 10.0,
+                   "MIDI SONG: the melody ignores Scale Lock (a played C# still snaps to C)",
+                   "song C# " + String (songCSharp, 1) + " Hz, played C# " + String (keyCSharp, 1) + " Hz");
     }
 
     std::cout << "\n  " << res.passed << " passed, " << res.failed << " failed\n";
