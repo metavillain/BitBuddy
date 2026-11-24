@@ -38,6 +38,28 @@ adb exec-out screencap -p > dist/android-screenshot.png
 
 if adb shell pidof "$pkg" > /dev/null; then
     echo "PASS: BitBuddy is running on Android"
+
+    # Phone trick: shake the (emulated) phone -> BitBuddy rolls a new random sound
+    if adb emu sensor set acceleration 0:9.81:0 2>&1 | grep -q "KO"; then
+        echo "SKIP: this emulator can't fake the motion sensor"
+    else
+        adb logcat -c
+        for i in 1 2 3 4 5 6; do
+            adb emu sensor set acceleration 30:0:9.81 > /dev/null
+            sleep 0.2
+            adb emu sensor set acceleration -30:0:9.81 > /dev/null
+            sleep 0.2
+        done
+        adb emu sensor set acceleration 0:9.81:0 > /dev/null
+        sleep 2
+        if adb logcat -d | grep -q "BitBuddy: shake"; then
+            echo "PASS: shaking the phone rolled a new random sound"
+        else
+            echo "FAIL: shaking the phone did nothing"
+            adb logcat -d | grep -iE "bitbuddy|JUCE|sensor" | tail -40 || true
+            exit 1
+        fi
+    fi
 else
     echo "FAIL: BitBuddy crashed or quit."
     echo "--- everything BitBuddy logged (pid ${pid:-?}), plus why Android closed it:"

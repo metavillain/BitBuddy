@@ -50,6 +50,8 @@
       <FILE id="BbF029" name="MicInput.h" compile="0" resource="0" file="../src/MicInput.h"/>
       <FILE id="BbF030" name="SongPlayer.cpp" compile="1" resource="0" file="../src/SongPlayer.cpp"/>
       <FILE id="BbF031" name="SongPlayer.h" compile="0" resource="0" file="../src/SongPlayer.h"/>
+      <FILE id="BbF032" name="Motion.cpp" compile="1" resource="0" file="../src/Motion.cpp"/>
+      <FILE id="BbF033" name="Motion.h" compile="0" resource="0" file="../src/Motion.h"/>
     </GROUP>
     <GROUP id="BbG003" name="assets">
       <FILE id="BbFont" name="PressStart2P-Regular.ttf" compile="0" resource="1" file="../assets/PressStart2P-Regular.ttf"/>

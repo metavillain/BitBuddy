@@ -1591,6 +1591,46 @@ static int runTests (const String& path)
                    "song C# " + String (songCSharp, 1) + " Hz, played C# " + String (keyCSharp, 1) + " Hz");
     }
 
+    // ---- 16. 1.2: slide-to-bend + tilt wobble (what the keyboard / phone send) -------
+    std::cout << "\n  -- slide to bend, tilt to wobble --\n";
+    {
+        auto procPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
+        auto& proc = *procPtr;
+        proc.selectPreset (0);
+        auto playA = [&]
+        {
+            proc.prepareToPlay (sr, 512);
+            proc.notePlayer.play ({ { 0.0, 1.5, 69, 0.8f } });
+            AudioBuffer<float> result (2, (int) (1.5 * sr)), blk (2, 512);
+            result.clear();
+            for (int pos = 0; pos + 512 <= result.getNumSamples(); pos += 512)
+            {
+                MidiBuffer midi;
+                blk.clear();
+                proc.processBlock (blk, midi);
+                result.copyFrom (0, pos, blk, 0, 0, 512);
+            }
+            return result;
+        };
+        proc.setTouchBend (2.0f);
+        const double bent = pitchAt (playA(), 0.3, 8192, sr);
+        proc.setTouchBend (0.0f);
+        proc.setTiltWobble (1.0f);
+        const auto wobbly = playA();
+        proc.setTiltWobble (0.0f);
+        double lo = 1.0e9, hi = 0.0;
+        for (double t = 0.3; t < 1.2; t += 0.02)
+        {
+            const double hz = pitchAt (wobbly, t, 1024, sr);
+            if (hz > 0.0) { lo = jmin (lo, hz); hi = jmax (hi, hz); }
+        }
+        const double straight = pitchAt (playA(), 0.3, 8192, sr);
+        res.check (std::abs (centsOff (bent, midiToHz (71))) < 10.0 && centsOff (hi, lo) > 30.0
+                       && std::abs (centsOff (straight, 440.0)) < 10.0,
+                   "SLIDE bends 2 semitones; TILT adds wobble; both let go cleanly",
+                   "bent " + String (bent, 1) + " Hz, wobble " + String (lo, 1) + ".." + String (hi, 1) + " Hz, after " + String (straight, 1) + " Hz");
+    }
+
     std::cout << "\n  " << res.passed << " passed, " << res.failed << " failed\n";
     return res.failed;
 }
@@ -2164,6 +2204,45 @@ static int runFocusTest()
                                  return hit != nullptr ? String (typeid (*hit).name()) + " '" + hit->getName() + "'" : String ("none");
                              }());
     }
+
+    // 2b. Slide up on a key: that note keeps playing and bends up; letting go bends it back
+    {
+        auto& kb = *piano;
+        const auto start = Point<float> (kb.getWidth() * 0.5f, kb.getHeight() * 0.9f);
+        const auto from = editor->getLocalPoint (&kb, start);
+        const auto to = editor->getLocalPoint (&kb, start.translated (0.0f, -kb.getHeight() * 0.45f));
+        auto t = Time::currentTimeMillis();
+        auto mouse = [&] (Point<float> p, bool down)
+        {
+            peer->handleMouseEvent (MouseInputSource::InputSourceType::mouse, p,
+                                    down ? ModifierKeys (ModifierKeys::leftButtonModifier) : ModifierKeys(),
+                                    MouseInputSource::defaultPressure, MouseInputSource::defaultOrientation, t += 20);
+        };
+        auto notesOn = [&]
+        {
+            Array<int> on;
+            for (int n = 0; n < 128; ++n)
+                if (proc.keyboardState.isNoteOn (1, n))
+                    on.add (n);
+            return on;
+        };
+        mouse (from, true);
+        const auto firstNotes = notesOn();
+        for (int i = 1; i <= 6; ++i)
+            mouse (from + (to - from) * ((float) i / 6.0f), true);
+        MessageManager::getInstance()->runDispatchLoopUntil (100);
+        const float bendHeld = proc.getTouchBend();
+        const auto heldNotes = notesOn();
+        mouse (to, false);
+        MessageManager::getInstance()->runDispatchLoopUntil (100);
+        res.check (firstNotes.size() == 1 && heldNotes == firstNotes && bendHeld > 1.0f && proc.getTouchBend() == 0.0f
+                       && notesOn().isEmpty(),
+                   "Slide up on a key: same note keeps playing, bends up, back in tune on release",
+                   "note " + (firstNotes.isEmpty() ? String ("none") : MidiMessage::getMidiNoteName (firstNotes[0], true, true, 4))
+                       + (heldNotes == firstNotes ? " held" : " CHANGED") + ", bend " + String (bendHeld, 2) + " st -> "
+                       + String (proc.getTouchBend(), 2));
+    }
+
 
     // 3. Open and close a drop-down menu: focus must come back by itself
     if (auto* combo = findComponent<ComboBox> (*editor))

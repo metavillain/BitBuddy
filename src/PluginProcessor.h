@@ -182,6 +182,12 @@ public:
 
     /** Plays scheduled notes: sound effects, jingles (and in the app, MIDI songs). */
     bb::NotePlayer notePlayer;
+    /** Slide on a key (pitch bend, semitones) and phone tilt (extra vibrato, 0..1): added to
+        whatever MIDI pitch bend / mod wheel is coming in. Any thread. */
+    void setTouchBend (float semitones) noexcept { touchBend = semitones; }
+    void setTiltWobble (float amount01) noexcept { tiltWobble = amount01; }
+    float getTouchBend() const noexcept { return touchBend.load(); }
+
     /** HUM (BitBuddy app): notes sung into the microphone. */
     bb::HumTracker humTracker;
 
@@ -211,6 +217,13 @@ private:
     bool echoWasOn = false, filterWasOn = false, wideWasOn = false;
     int stereoMode = 0;          // 0 Middle, 1 Wide, 2 Swing
     double renderRate = 44100.0; // the sample rate prepareToPlay was given
+    std::atomic<float> touchBend { 0.0f }, tiltWobble { 0.0f };
+    float midiBend = 0.0f, midiModWheel = 0.0f;   // from MIDI (DAW / keyboard)
+    void applyBendAndWobble() noexcept
+    {
+        engine.setPitchBend (midiBend + touchBend.load (std::memory_order_relaxed));
+        engine.setModWheel (juce::jmax (midiModWheel, tiltWobble.load (std::memory_order_relaxed)));
+    }
     double swingPhase = 0.0, swingStep = 0.0;   // Swing: once from side to side per bar
     std::array<int, 64> filterTriggers {};   // sample positions of this block's new notes
     int numFilterTriggers = 0;

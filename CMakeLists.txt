@@ -38,6 +38,7 @@ set(BITBUDDY_SOURCES
     src/HumTracker.cpp
     src/MicInput.cpp
     src/SongPlayer.cpp
+    src/Motion.cpp
     src/RetroLookAndFeel.cpp)
 
 # JUCE features BitBuddy never uses. Leaving them out keeps the binaries small.
@@ -87,6 +88,10 @@ juce_add_plugin(BitBuddy
     IPAD_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight)
 
 target_sources(BitBuddy PRIVATE ${BITBUDDY_SOURCES})
+if(IOS)   # phone tricks: the motion sensor (shake / tilt)
+    target_sources(BitBuddy PRIVATE src/Motion_ios.mm)
+    target_link_libraries(BitBuddy PRIVATE "-framework CoreMotion")
+endif()
 target_compile_definitions(BitBuddy PRIVATE BB_STANDALONE_HOLDER=1)   # the app can reach its own microphone
 target_compile_definitions(BitBuddy PUBLIC ${BITBUDDY_JUCE_OPTIONS} JUCE_VST3_CAN_REPLACE_VST2=0
     $<$<BOOL:${IOS}>:JUCE_CONTENT_SHARING=1>)   # SHARE button for recordings on iPhone / iPad

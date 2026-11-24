@@ -6,6 +6,7 @@
 #include "PluginProcessor.h"
 #include "RetroLookAndFeel.h"
 #include "MicInput.h"
+#include "Motion.h"
 
 namespace bb
 {
@@ -361,7 +362,16 @@ public:
     void resized() override;
     int getBaseOctave() const noexcept { return baseOctave; }
 
+    // Slide a finger (or the mouse) up / down on a key you're holding: bends the note
+    // up to 2 semitones (added in 1.2). Sideways still slides along the keys.
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    std::function<void (float semitones)> onBend;
+
 private:
+    struct Slide { juce::Point<float> start; int mode = 0; };   // mode: 0 not sure yet, 1 bend, 2 slide along
+    std::array<Slide, 10> slides {};
     juce::String letterFor (int note) const;   // the computer key that plays this note
     bool isDimmed (int note) const;
 
@@ -580,6 +590,15 @@ private:
     juce::Label hintLabel;
     juce::Label keysStatus;
     bool stripDetached = false, boxDraggingEnabled = true, diceShown = true;
+
+    // Phone tricks (added in 1.2): SHAKE for a new sound, TILT for wobble
+    Motion motion;
+    bool hasMotion = false, shakeOn = true, tiltOn = false, hasTiltReference = false;
+    float tiltReference[3] {};
+    std::vector<double> shakePeaks;
+    double lastShake = 0.0;
+    void updateMotion();
+    void setMotionOptions (bool shake, bool tilt);
     juce::String lastKeysStatus;
     ChipKeyboard keyboard;
     BottomStrip bottomStrip { hintLabel, keysStatus, keyboard };

@@ -264,6 +264,7 @@ bool BitBuddyProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
 void BitBuddyProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     renderRate = sampleRate > 0.0 ? sampleRate : 44100.0;
+    midiBend = midiModWheel = 0.0f;   // (a fresh start, like the engine's own)
     engine.prepare (sampleRate);
     for (auto& f : fx)
         f.prepare (sampleRate);
@@ -373,11 +374,17 @@ void BitBuddyProcessor::handleMidi (const juce::MidiMessage& m)
     else if (m.isAllNotesOff())
         engine.allNotesOff (false);
     else if (m.isPitchWheel())
-        engine.setPitchBend ((float) (m.getPitchWheelValue() - 8192) / 8192.0f * 2.0f);   // +/- 2 semitones
+    {
+        midiBend = (float) (m.getPitchWheelValue() - 8192) / 8192.0f * 2.0f;   // +/- 2 semitones
+        applyBendAndWobble();
+    }
     else if (m.isController())
     {
         if (m.getControllerNumber() == 1)        // mod wheel -> extra vibrato
-            engine.setModWheel ((float) m.getControllerValue() / 127.0f);
+        {
+            midiModWheel = (float) m.getControllerValue() / 127.0f;
+            applyBendAndWobble();
+        }
         else if (m.getControllerNumber() == 64)  // sustain pedal
             engine.setSustainPedal (m.getControllerValue() >= 64);
     }
@@ -411,6 +418,8 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         lastTempo = tempo;
         updateEngineParams (tempo);
     }
+
+    applyBendAndWobble();   // (sliding on a key / tilting the phone)
 
     // 1. Synth voices -> channel 0 (STEREO Wide: channels 0 + 1), split at each MIDI
     //    event for sample accuracy

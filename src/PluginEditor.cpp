@@ -1627,6 +1627,41 @@ void ChipKeyboard::drawBlackNote (int note, juce::Graphics& g, juce::Rectangle<f
     }
 }
 
+void ChipKeyboard::mouseDown (const juce::MouseEvent& e)
+{
+    slides[(size_t) (e.source.getIndex() % (int) slides.size())] = { e.position, 0 };
+    juce::MidiKeyboardComponent::mouseDown (e);
+}
+
+void ChipKeyboard::mouseDrag (const juce::MouseEvent& e)
+{
+    auto& slide = slides[(size_t) (e.source.getIndex() % (int) slides.size())];
+    const auto moved = e.position - slide.start;
+    if (slide.mode == 0 && moved.getDistanceFromOrigin() > 10.0f)
+        slide.mode = std::abs (moved.y) > std::abs (moved.x) ? 1 : 2;   // mostly up/down = bend, sideways = slide along
+
+    if (slide.mode == 1)
+    {
+        // Up = higher: half the keyboard's height = 2 semitones (after a small dead zone)
+        const float travel = juce::jmax (0.0f, std::abs (moved.y) - 10.0f) * (moved.y < 0.0f ? 1.0f : -1.0f);
+        if (onBend != nullptr)
+            onBend (juce::jlimit (-2.0f, 2.0f, travel / (getHeight() * 0.5f) * 2.0f));
+        return;   // (the key you started on keeps playing)
+    }
+    if (slide.mode == 2)
+        juce::MidiKeyboardComponent::mouseDrag (e);
+}
+
+void ChipKeyboard::mouseUp (const juce::MouseEvent& e)
+{
+    auto& slide = slides[(size_t) (e.source.getIndex() % (int) slides.size())];
+    if (slide.mode == 1 && onBend != nullptr)
+        onBend (0.0f);   // back in tune
+    slide.mode = 0;
+    juce::MidiKeyboardComponent::mouseUp (e);
+}
+
+
 bool ChipKeyboard::keyPressed (const juce::KeyPress& key)
 {
     const auto c = juce::CharacterFunctions::toLowerCase (key.getTextCharacter());
@@ -2235,6 +2270,16 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
         addAndMakeVisible (box);
     }
     loadLayout();
+    keyboard.onBend = [this] (float semitones) { proc.setTouchBend (semitones); };
+    hasMotion = Motion::isAvailable();   // phones: SHAKE + TILT
+    if (hasMotion)
+    {
+        shakeOn = loadSetting ("shake", "1") != "0";
+        tiltOn = loadSetting ("tilt", "0") == "1";
+        if (shakeOn || tiltOn)
+            motion.start();
+    }
+
     diceShown = loadSetting ("showDice", "1") != "0";   // VIEW > Show dice buttons
     for (auto* box : allBoxes)
         box->setDiceShown (diceShown);
@@ -2618,6 +2663,11 @@ void MainPanel::showViewMenu()
     menu.addItem (101, "RESET LAYOUT (ORDER + ALL BOXES)");
     menu.addSeparator();
     menu.addItem (103, "SHOW DICE BUTTONS (RE-ROLL ONE BOX)", true, diceShown);
+    if (hasMotion)
+    {
+        menu.addItem (104, "SHAKE THE PHONE: NEW RANDOM SOUND", true, shakeOn);
+        menu.addItem (105, "TILT THE PHONE: WOBBLE (VIBRATO)", true, tiltOn);
+    }
     menu.addSeparator();
     menu.addItem (102, "TIP: DRAG A BOX BY ITS TITLE TO MOVE IT", false);
 
@@ -2636,6 +2686,10 @@ void MainPanel::showViewMenu()
                                 safe->resetLayout();
                             else if (result == 103)
                                 safe->setDiceShown (! safe->diceShown);
+                            else if (result == 104)
+                                safe->setMotionOptions (! safe->shakeOn, safe->tiltOn);
+                            else if (result == 105)
+                                safe->setMotionOptions (safe->shakeOn, ! safe->tiltOn);
                             else if (juce::isPositiveAndBelow (result - 1, (int) safe->allBoxes.size()))
                             {
                                 const auto& id = safe->allBoxes[(size_t) result - 1]->getId();
@@ -2644,8 +2698,68 @@ void MainPanel::showViewMenu()
                         });
 }
 
+void MainPanel::setMotionOptions (bool shake, bool tilt)
+{
+    shakeOn = shake;
+    tiltOn = tilt;
+    saveSetting ("shake", shake ? "1" : "0");
+    saveSetting ("tilt", tilt ? "1" : "0");
+    hasTiltReference = false;   // TILT measures from how you hold the phone right now
+    proc.setTiltWobble (0.0f);
+    if (shake || tilt)
+        motion.start();
+    else
+        motion.stop();
+}
+
+void MainPanel::updateMotion()
+{
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    if (! hasMotion || ! motion.read (x, y, z))
+        return;
+    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+
+    // SHAKE: two hard jolts (more than twice gravity) within 0.6 s -> a new random sound
+    if (shakeOn)
+    {
+        const float strength = std::sqrt (x * x + y * y + z * z);
+        if (strength > 2.0f && (shakePeaks.empty() || now - shakePeaks.back() > 0.12))
+            shakePeaks.push_back (now);
+        shakePeaks.erase (std::remove_if (shakePeaks.begin(), shakePeaks.end(), [now] (double t) { return now - t > 0.6; }),
+                          shakePeaks.end());
+        if (shakePeaks.size() >= 2 && now - lastShake > 1.5)
+        {
+            lastShake = now;
+            shakePeaks.clear();
+            proc.randomize();
+            proc.notePlayer.play ({ { 0.0, 0.35, 60, 0.8f } });
+            showHint ("SHAKE! A brand new random sound. (Switch it off in VIEW.)");
+            juce::Logger::writeToLog ("BitBuddy: shake -> new random sound");
+        }
+    }
+
+    // TILT: the further you tilt from where you started, the more it wobbles (vibrato)
+    if (tiltOn)
+    {
+        const float length = std::sqrt (x * x + y * y + z * z);
+        if (length < 0.5f)
+            return;   // (in free fall?!)
+        const float n[3] = { x / length, y / length, z / length };
+        if (! hasTiltReference)
+        {
+            std::copy (n, n + 3, tiltReference);
+            hasTiltReference = true;
+        }
+        const float dot = juce::jlimit (-1.0f, 1.0f, n[0] * tiltReference[0] + n[1] * tiltReference[1] + n[2] * tiltReference[2]);
+        const float degrees = juce::radiansToDegrees (std::acos (dot));
+        proc.setTiltWobble (juce::jlimit (0.0f, 1.0f, (degrees - 10.0f) / 35.0f));   // 10..45 degrees = none..full
+    }
+}
+
+
 void MainPanel::timerCallback()
 {
+    updateMotion();
     scope.refresh();
     envelopeView.refresh();
     filterBox.refresh();
