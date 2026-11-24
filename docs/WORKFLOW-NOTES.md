@@ -193,6 +193,8 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
   keyboard pinned (`Viewport` + `ScrollOnDragMode::nonHover` + `setViewportIgnoreDragFlag` on knobs).
 - **Gradle downloads a Java 8 toolchain mid-build** for Projucer Android projects; that download can arrive
   corrupt ("Cannot expand TAR"). Install Java 8 *and* 21 with `actions/setup-java` up front.
+- **Maven Central rate-limits GitHub's shared runners** (HTTP 429 during Gradle's dependency download):
+  cache Gradle (`setup-java` `cache: gradle`) and retry the Gradle build a couple of times.
 - **Smoke tests only prove "it starts"**: get the app onto a real device early for a usability check.
 - **After changing the version, delete `build/BitBuddy_artefacts/JuceLibraryCode/BitBuddy_resources.rc`:** JUCE
   doesn't regenerate the Windows version resource, so the exe's file properties kept saying 1.0.1 (the plugin

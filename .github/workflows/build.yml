@@ -141,6 +141,7 @@ jobs:
           java-version: |
             8
             21
+          cache: gradle   # keep downloaded build parts between runs (fewer downloads, fewer 429s)
 
       - name: Android NDK + signing key
         run: |
@@ -153,7 +154,13 @@ jobs:
         working-directory: android/Builds/Android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease_Release --no-daemon --quiet
+          # Maven Central sometimes rate-limits GitHub's shared machines (HTTP 429): retry
+          for attempt in 1 2 3; do
+            ./gradlew assembleRelease_Release --no-daemon --quiet && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            echo "Gradle failed (attempt $attempt), usually a temporary download limit - retrying in 60 s"
+            sleep 60
+          done
           version="$(sed -n 's/^project(BitBuddy VERSION \([0-9.]*\).*/\1/p' "$GITHUB_WORKSPACE/CMakeLists.txt")"
           mkdir -p "$GITHUB_WORKSPACE/dist"
           cp "$(find app/build/outputs/apk -name '*.apk' | head -1)" "$GITHUB_WORKSPACE/dist/BitBuddy-$version-Android.apk"
