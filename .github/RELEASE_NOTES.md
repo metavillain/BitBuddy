@@ -1,4 +1,19 @@
-## ✨ New in 1.1
+## ✨ New in 1.2
+
+- **Game sounds:** one tap makes a new COIN, JUMP, LASER, HIT, BOOM, POWER-UP, BLIP or BOMB -
+  **SAVE WAV** for your own game - plus **jingles** (level clear, game over, got item, fanfare) in your key
+- **Your voice on the NES:** record yourself (or load a WAV) and play it as the new **VOICE** wave -
+  crunchy 1-bit on the NES chip, 4-bit on Game Boy
+- **HUM:** hum or sing a tune and BitBuddy plays it with your sound (BitBuddy app)
+- **MIDI songs:** open any `.mid` file and hear it chiptune style - melody on your sound,
+  triangle bass, pulse chords, drum kit (BitBuddy app)
+- **Sound codes:** **SHARE** a sound as a line of text; your friend pastes it and has the same sound
+- **New movement + stereo:** trill / random vibrato, sweeps that keep going (falling bombs) or bounce
+  (sirens), Game Boy-style **WIDE** stereo and a side-to-side **SWING**
+- **Phone tricks:** slide up / down on a key to bend it, shake your phone for a new sound, tilt it for wobble
+- **VIEW → Show dice buttons** to hide the dice; 4 new presets (Trill Lead, Stereo Arp, Falling Bomb, Siren)
+
+## New in 1.1
 
 - **Scale Lock** + **Smart chords**: pick a key and scale, and every note (and chord) fits
 - **JAM**: a drums + bass + chords band in your key to play along with (BitBuddy app)
@@ -26,7 +41,8 @@ Unzip it and open **READ ME FIRST.txt**. The short version:
   Then find BitBuddy in GarageBand / Logic under *AU Instruments → BitBuddy Labs*.
 - **Android:** open the `.apk` on your phone. Android asks to allow installing apps from your
   browser or Files app: tap **Settings → Allow from this source**, then **Install**. BitBuddy
-  needs no permissions. Turn your phone sideways and tap a control to see what it does.
+  only asks for the microphone if you press REC VOICE or HUM. Turn your phone sideways and tap a
+  control to see what it does.
 - **iPhone / iPad:** coming later (Apple requires a paid developer account to share apps).
 
 New to making music? The **[Beginner's Guide](https://github.com/metavillain/BitBuddy/blob/main/docs/BEGINNERS-GUIDE.md)**
@@ -36,7 +52,7 @@ takes you from zero to your first chiptune song.
 
 - The **BitBuddy app** (plays on its own, no music software needed)
 - The **plugin** for music software: VST3 (Windows + Mac) and Audio Unit (Mac: GarageBand, Logic)
-- 27 presets, a demo song with MIDI parts to remix, and the full source code
+- 31 presets, a demo song with MIDI parts to remix, and the full source code
 
 ## Tested on every build
 

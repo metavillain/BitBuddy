@@ -110,6 +110,10 @@ then extract it. That avoids most Windows security pop-ups.
 - No wrong notes: pick a KEY + SCALE LOCK (bottom right). JAM starts a backing band,
   REC records you (WAV + MIDI, in Music\BitBuddy Recordings).
 - Draw your own wave (DRAW), or macros (MACROS) on the SCREEN. SAVE keeps your sounds.
+- GAME SOUNDS: tap COIN, JUMP, LASER... for a new sound effect each time (SAVE WAV keeps it).
+- YOUR VOICE: REC VOICE, say something, then play it on the keys (CHIP: NES = crunchy!).
+  HUM: sing a tune and BitBuddy plays it. MIDI SONGS: open any .mid file.
+- SHARE gives you a code for your sound - send it to a friend to paste in.
 - Click BIT, the little chip at the top, to change the colours. VIEW hides / shows boxes.
 - Demo\ has a song made with BitBuddy, plus each part as a MIDI file to remix.
 - Beginners-Guide.md (open with Notepad) explains chiptune from scratch.

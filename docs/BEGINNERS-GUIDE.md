@@ -141,25 +141,30 @@ your DAW.
 
 | Control | What it does |
 |---|---|
-| **Wave** | The raw sound: Square, Pulse 25%, Pulse 12.5%, Triangle, Saw, Noise, Metal Noise, Drum Kit, **Draw** (your own) |
+| **Wave** | The raw sound: Square, Pulse 25%, Pulse 12.5%, Triangle, Saw, Noise, Metal Noise, Drum Kit, **Draw** (your own), **Voice** (a recording) |
 | **Chip** | Modern (no limits), or behave like a real **NES**, **Game Boy** or **C64** |
 | **Attack / Decay / Sustain / Release** | Volume shape of each note: fade-in, drop, hold level, fade-out |
 | **Arp: Off / Chord / Notes** | Chord = one key plays a fast chord. Notes = held keys play as a pattern |
 | **Chord / Pattern / Speed / Octaves** | Which chord, what order, how fast (tempo-synced or 15/30/60 Hz), how wide |
-| **Vibrato / Vib Rate / Vib Wait** | Pitch wobble: amount, speed, delay before it starts |
-| **Sweep / Swp Time** | Notes slide in from above (+) or below (−) |
+| **Vibrato / Vib Rate / Vib Wait** | Pitch wobble: amount, speed, delay before it starts; **Smooth / Trill / Random** = its shape |
+| **Sweep / Swp Time** | Notes slide in from above (+) or below (−); **Slide / Forever / Bounce** = once, keep going, or up and down |
 | **PWM** | Animates the pulse width: lush and chorus-like (Square/Pulse waves) |
 | **Glide / Poly / Mono** | Slide between notes; Mono = one note at a time like a real chip |
 | **Bits / Rate** | Lo-fi crunch: fewer bits, lower sample rate |
 | **Echo / Time / Repeats** | Ping-pong echo, tempo-synced |
+| **Middle / Wide / Swing** | Stereo: centre, each note on its own side (Game Boy style), or swinging side to side |
 | **Volume** | Output level. A gentle limiter stops loud chords from crackling |
 | **C64 Filter: Off / Low / Band / High, Cutoff, Reso, Env** | The squelchy Commodore 64 filter; Env makes it "wow" on every note |
 | **Key / Scale Lock** | Every key you press snaps into the scale: no wrong notes |
 | **Jam / Style / Tempo** (app) | A backing band (drums, bass, chords) in your key |
 | **Rec** (app) | Records a WAV (sound) + MIDI (notes) of what you play |
+| **Game sounds: New FX / Again / Save WAV / Jingles** | A new sound effect in one tap, save it for your game, short tunes in your key |
+| **Your voice: Rec Voice / Load WAV / Aah / Hum** | Record or load the VOICE wave; HUM = sing and BitBuddy plays it (app) |
+| **MIDI songs: Open MIDI / Play** (app) | Play any MIDI file the chiptune way |
+| **Share** | Copy your sound as a code, or paste a friend's code |
 | **Screen: Scope / Wave / Macros** | Watch the sound, draw your own wave, or draw macros |
 | **Save / Mutate / dice** | Keep your sound as a preset; nudge it; re-roll one section |
-| **View** | Show / hide boxes (drag a box's title to move it) |
+| **View** | Show / hide boxes (drag a box's title to move it), hide the dice; on phones: shake + tilt |
 | **Mod wheel / Pitch bend / Sustain pedal** | All supported from a MIDI keyboard |
 
 Hover over any control in BitBuddy and the help bar at the bottom explains it.
@@ -215,3 +220,43 @@ see what it does. Hide the boxes you don't use with **VIEW** to make the page sh
 colours: Sweetie 16, Game Boy, Amber CRT or NES. Use **VIEW** to hide boxes you don't use, and drag a
 box by its title bar to move it. Hidden boxes keep working; VIEW tells you if one is still changing
 the sound.
+
+---
+
+## 7. New in 1.2: games, voices and phone tricks
+
+**Sound effects in one tap.** Box 7 (GAME SOUNDS): tap **COIN, JUMP, LASER, HIT, BOOM, POWER-UP, BLIP**
+or **BOMB** and BitBuddy makes a brand new one of that kind - every tap is different. It becomes your
+sound, so you can tweak it, **AGAIN** to hear it once more, or **SAVE WAV** to get a file for your own
+game (in *Music → BitBuddy Sounds*; on phones the share menu opens).
+
+**Jingles.** Same box: **LEVEL CLEAR, GAME OVER, GOT ITEM, FANFARE** play a short tune, written fresh
+each time in your KEY + SCALE, with your sound. In the app, press **REC** first to keep one.
+
+**Your voice on the NES.** Box 8 (YOUR VOICE): press **REC VOICE**, say or sing something short (up to
+3 seconds), press **STOP**. That's the **VOICE** wave now: middle C plays it at its own pitch, other keys
+faster or slower. Set **CHIP** to **NES** for the crunchy 1-bit sound the NES used for voices and drum
+samples, or **Game Boy** for 4-bit. **LOAD WAV** uses any WAV file instead; **AAH** brings back the
+built-in sung "aah". (In a DAW, LOAD WAV works; REC VOICE and HUM are in the app.)
+
+**Hum to play (app).** Press **HUM** and hum or sing a tune: BitBuddy plays it with your sound. Turn on
+SCALE LOCK and every note lands in key. Use headphones so BitBuddy doesn't hear itself.
+
+**Any song, chiptune style (app).** Box 9: **OPEN MIDI** and pick a `.mid` file. BitBuddy shares it out
+like a real NES tune: the melody plays with *your* sound, the bass on a triangle, everything else on a
+pulse wave, and the drums on the drum kit. Change your sound while it plays!
+
+**Share a sound.** **SHARE → Copy my sound code** turns your sound into a line of text starting with
+`BB1-`. Send it to a friend; they press **SHARE → Paste a sound code** and get exactly your sound (their
+KEY, SCALE and volume stay theirs).
+
+**New movement.** Under the knobs in box 4: vibrato can be **SMOOTH**, **TRILL** (jumps to the note above -
+try the *Trill Lead* preset) or **RANDOM**. A sweep can **SLIDE** into the note, keep going **FOREVER**
+like the NES (*Falling Bomb*), or **BOUNCE** up and down (*Siren*).
+
+**Stereo.** Under box 5: **WIDE** puts each new note on the other side, like a Game Boy in headphones
+(try *Stereo Arp*); **SWING** moves the whole sound from side to side once a bar.
+
+**Phone tricks.** Slide your finger up or down on a key you're holding to bend the note (this works
+with a mouse too). On a phone, **shake** it for a new random sound, and switch on **tilt** in **VIEW**
+to add wobble by tilting the phone. Don't like the dice? **VIEW → Show dice buttons** hides them.

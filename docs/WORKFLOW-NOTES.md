@@ -54,6 +54,15 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 43 | Phone layout: keyboard + help pinned, page scrolls by swipe; phones never get a forced window size | UI test at 914 × 411 + phone snapshots; 11/11 | a desktop test window's shape lock and an async re-fit both interfered with the test (§4) |
 | 44 | Release run retried: Android launch test hit a still-booting emulator; Windows MUTATE test failed once | launch test waits + retries (passes first try); MUTATE test now finds switches by type | two flaky tests, not app bugs: random + boot timing (§4) |
 | 45 | **v1.1.0 released** (tag moved to the green commit 223d199 - no release existed yet) + reinstalled on the PC | 4/4 platforms green, release page = latest, Windows zip / macOS zip / Android APK uploaded; installed copies hash-match the build | – |
+| 46 | 1.2 scope: user picked 9 of 12 ideas in a picker widget; defaults stated up front (mic + MIDI songs app-only, tilt off by default, branch `v1.2-features`) | – | one idea ("wobble + sweep") already existed in 1.0: re-scoped to sweep modes + vibrato shapes and said so |
+| 47 | Sweep modes, vibrato shapes, Game Boy stereo (`ChannelFx` per side) | 89/89 | an `\n` in a Python-in-bash edit became a real newline (§4) |
+| 48 | NotePlayer + GAME SOUNDS (8 effects, SAVE WAV, 4 jingles) | 94/94, focus 14/14 | `getSampleRate()` is 0 when you call `prepareToPlay` yourself (§4) |
+| 49 | User asked mid-build: "an option to hide the dice icons?" -> VIEW > SHOW DICE BUTTONS; SHARE + sound codes | 96/96, focus 15/15 | a random test (BOOM echo tail) needed a longer window |
+| 50 | VOICE wave, MicInput (app only), HumTracker (YIN) | 101/101 | **stack overflow**: the processor grew to ~100 KB, tests kept several on the stack (§4) |
+| 51 | Branch CI #1: all 4 platforms build the mic code; Mac failed the new exact parameter count (AU adds no bypass/program) | test made format-aware | – |
+| 52 | MIDI SONGS (arranger + song band), window opens <= 90% of the screen | 104/104 | – |
+| 53 | Phone tricks: slide-to-bend, shake, tilt (Android Java listener via JUCE, iOS CoreMotion) | 105/105, focus 16/16; **emulator shake test PASS in CI** | the remembered MIDI pitch bend leaked across restarts - the 1.0 bug again, caught by the same tests |
+| 54 | Cleanup + mutation tests (9 bugs planted, 9 caught) + docs | – | restoring a mutated file with its old timestamp made MSBuild keep the mutant (§4) |
 
 ---
 
@@ -91,6 +100,11 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
     Decide before the UI is laid out, so the plugin view doesn't show dead controls.
 
 ---
+
+18. **Feature menus: check every idea against what already exists before showing it.** 1.2's list offered
+    "wobble + pitch sweep", which BitBuddy had since 1.0. A 2-minute grep of the parameter list first.
+19. **Microphone / sensors: OK to ask for permissions?** Mic features add a permission prompt (phones, Mac);
+    state when it appears (only on first use) before building.
 
 ## 3. Efficiency ideas (expedite completion)
 
@@ -222,6 +236,28 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
   such lists from the code (here: every `AudioParameterChoice`) and run a random test several times locally.
 - **A freshly booted CI emulator can drop the first app launch** (still busy with BOOT_COMPLETED jobs).
   Wait ~20 s, launch with `am start -W`, check `pidof`, retry up to 3 times.
+- **Big objects on the stack crash the tests, not the app.** The voice sample (48 K atomics) made
+  `BitBuddyProcessor` ~100 KB; the test function kept six on the stack -> exit code 0xC00000FD (stack
+  overflow) before printing anything. Hosts create processors on the heap; tests must too (`make_unique`).
+- **`getSampleRate()` is 0 if nobody called `setRateAndBufferSizeDetails`.** DAWs do; tests and private
+  copies (SAVE WAV) only call `prepareToPlay`. Keep your own copy of the rate from `prepareToPlay`.
+- **State that outlives `prepareToPlay` must be reset there.** Moving the MIDI pitch bend from the
+  engine into the processor made a +2 st bend leak into every later test (the 1.0 bug, again).
+- **Plugin formats add different parameters:** VST3 adds bypass + program (+2), AU adds none.
+- **Changing a choice parameter's number of options** (9 -> 10 waves) changes its 0..1 value per option.
+  Tests that set choices as fractions must compute them (`index / (count - 1)`); sound codes store
+  choices as indexes for the same reason.
+- **In Python run through Git Bash heredocs, backslashes are not reliable** (`\n` became a newline,
+  `'\\'` broke the script). Write scripts / C++ snippets with the file tool, then run them.
+- **Mutation testing: restore with a *new* timestamp.** `shutil.move` of the backup kept the old time,
+  so MSBuild skipped the rebuild and the next batch still ran the mutants. Touch restored files.
+- **The app's microphone without changing the plugin:** `StandalonePluginHolder::getInstance()` (only in
+  the app build, `BB_STANDALONE_HOLDER=1`) -> switch the device's input on, add an extra
+  `AudioIODeviceCallback`, restore the old setup afterwards. Include JUCE's processor/utils/gui_extra
+  headers before `juce_StandaloneFilterWindow.h`.
+- **Android sensors without Java files:** `JUCE_CORE_INCLUDE_JNI_HELPERS 1` (before the first JUCE
+  include) + `AndroidInterfaceImplementer` + `CreateJavaInterface ("android/hardware/SensorEventListener")`.
+  The emulator fakes motion: `adb emu sensor set acceleration x:y:z`.
 
 ---
 
@@ -296,6 +332,8 @@ For instruments, add an interaction test for the main play loop from day one.
 | Mutation | **3 / 3 caught** | |
 | 1.1 (all features + cleanup) | **77 / 77**, focus + layout 10/10, 0 warnings | `docs/reports/` |
 | 1.1 mutation | **2 / 2 caught** | |
+| 1.2 (all features + cleanup) | **105 / 105**, focus + layout + phone 16/16, 0 warnings, CI 4/4 incl. emulator shake | `docs/reports/` |
+| 1.2 mutation | **9 / 9 caught** | TRILL, WIDE, code checksum, HUM timing, NES voice, stuck notes, songs + Scale Lock, BOMB, voice trim |
 
 Root causes of the run-1 failures:
 
@@ -388,6 +426,17 @@ disabling JUCE's hidden MIDI-CC parameters (needed for mod wheel / pitch bend in
 *Lesson again: the "skip work when nothing changed" optimisation got its own mutation test (ignore knob
 changes → 9 tests fail).*
 
+### 8c. 1.2 cleanup + efficiency pass
+
+| Change | Why |
+|---|---|
+| `ChannelFx`: DC blocker + filter + console tone + crunch as one unit, one per side | WIDE stereo needed a second chain; mono path unchanged |
+| `NotePlayer`: one sample-accurate note list for sound FX, jingles and songs | three features, one player; no allocation on the audio thread |
+| `bandBassSound()` shared by the JAM band and the song band | same sound, one definition |
+| Tests: one `runOwn()` helper instead of five copies | shorter tests, one place to fix |
+| Default voice saved as `"default"`, not 25 KB of base64 | projects stay ~2.7 KB |
+| Idle cost re-measured: ~3600x real time (unchanged within noise) | new per-block checks are all cheap |
+
 ## 9. Fun-factor ideas: all built in 1.1
 
 All nine are in 1.1, in this order (each enables the next): Scale Lock + Smart chords → piano scale
@@ -404,3 +453,7 @@ RECORD → JAM → BIT + themes, then (user request) hideable / movable boxes + 
 - Share recordings from the desktop app (email / drag out), a recording "count-in".
 - Jam: more styles, a song-structure mode (verse / chorus), MIDI export of the band.
 - iOS: share via TestFlight (needs an Apple Developer account).
+- 1.2 ideas not picked yet: **Song maker** (4-track step grid, export WAV/MIDI - reuse the JAM sequencer
+  + NotePlayer), **Follow BIT** (falling-notes play-along game), **stickers + BIT outfits**.
+- Try REC VOICE / HUM / shake / tilt on a real phone (CI covers the emulator shake and the pitch tracker
+  with synthetic singing, not a real microphone).

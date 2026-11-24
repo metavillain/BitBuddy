@@ -1,15 +1,21 @@
-﻿
+
 === Keyboard focus test ===
 
   PASS  Only the piano can take keyboard focus      ok
-  PASS  Boxes: hide (x button + VIEW), move, reset; window reshapes; layout savedheight 778 -> 660, window ratio 1.515 (1000x751), x ok, saved, moved, reset
+  PASS  VIEW > Show dice buttons: hides all dice, saved, comes back6 dice -> 0 (saved) -> 6
+  PASS  Boxes: hide (x button + VIEW), move, reset; window reshapes; layout savedheight 970 -> 852, window ratio 1.174 (1000x947), x ok, saved, moved, reset
+  PASS  Phone screen: keyboard pinned, boxes scroll, knobs still turn; desktop size restoresscrolls, strip 0 310 914 101, knobs ok, restored
   PASS  Keys work as soon as the window opens       
   PASS  Keys still work after clicking wave button (SAW)
-  PASS  Simulated click selected the SAW wave       
+  PASS  Simulated click selected the SAW wave       wave 4, button at 257 87 53 85 in editor 80 80 1000 947, component there: class bb::WaveButton 'SAW'
   PASS  Keys still work after clicking knob (Attack)
   PASS  Keys still work after clicking MONO button  
   PASS  Keys still work after clicking next-preset button
   PASS  Keys still work after clicking SURPRISE ME! button
-  PASS  Keys come back after a drop-down menu closesmenu opened + closed
+  PASS  Keys still work after clicking COIN button  
+  PASS  Simulated click on COIN made a new coin soundCoin #2
+  PASS  Keys still work after clicking LEVEL CLEAR button
+  PASS  Slide up on a key: same note keeps playing, bends up, back in tune on releasenote G4 held, bend 1.23 st -> 0.00
+  PASS  Keys come back after a drop-down menu closesmenu did not open
 
-  10 passed, 0 failed
+  16 passed, 0 failed

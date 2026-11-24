@@ -17,16 +17,17 @@ is quick and fun even if you've never made music before.
 |---|---|---|
 | **Windows** 10 / 11 | app + VST3 plugin | ✅ download |
 | **Mac** (Apple Silicon + Intel, macOS 10.13+) | app + Audio Unit + VST3 | ✅ download |
-| **Android** 7.0+ phone / tablet | app (`.apk`); on phones the keyboard stays pinned and the rest scrolls | ✅ download |
+| **Android** 7.0+ phone / tablet | app (`.apk`); on phones the keyboard stays pinned and the rest scrolls; shake + tilt tricks | ✅ download |
 | **iPhone / iPad** | app + AUv3 (GarageBand, AUM…) | 🧪 builds and runs in the iPad simulator; sharing it needs a paid Apple Developer account |
 
 **New to all this?** Start with the **[Beginner's Guide](docs/BEGINNERS-GUIDE.md)**.
 
 ## Features
 
-- **9 chip sounds:** Square, Pulse 25%, Pulse 12.5%, 4-bit Triangle, Saw, LFSR Noise,
-  "Metal" short-mode noise (tuned to your keys), a 12-piece synthesized **Drum Kit**, and **DRAW**:
-  draw your own 32-step, 4-bit wave like the Game Boy's wave channel
+- **10 chip sounds:** Square, Pulse 25%, Pulse 12.5%, 4-bit Triangle, Saw, LFSR Noise,
+  "Metal" short-mode noise (tuned to your keys), a 12-piece synthesized **Drum Kit**, **DRAW**
+  (draw your own 32-step, 4-bit wave like the Game Boy's wave channel) and **VOICE**: your own
+  recording played like the NES sample channel (1-bit "DPCM" on NES, 4-bit on Game Boy / C64)
 - **Chip modes:** Modern, or real **NES / Game Boy / C64** behaviour (note limits, 4-bit volume steps,
   the chips' own pitch tables, on/off NES triangle, 16-speed NES noise, output tone)
 - **Magic Chords:** hold one key to get the classic fast-arpeggio chiptune chord
@@ -35,12 +36,21 @@ is quick and fun even if you've never made music before.
 - **Scale Lock:** pick a key + scale (8 scales) and every note you play fits; the piano shows the scale
 - **Instrument macros** (FamiTracker style): VOL / ARP / PITCH / DUTY step sequences at 60 steps/s with loops
 - **C64 filter:** resonant low / band / high pass with a per-note envelope
-- **Movement:** delayed vibrato, pitch sweeps (lasers, jumps, kicks), PWM, glide, mono/poly
-- **Crunch + Echo:** bit depth, sample-rate reduction, tempo-synced ping-pong echo
-- **27 presets**, including leads, bass, chords, drums, sound effects, and demos of every 1.1 feature
+- **Movement:** delayed vibrato (**smooth, trill or random**), pitch sweeps (**slide, forever** like the
+  NES sweep unit, or **bounce** for sirens), PWM, glide, mono/poly
+- **Crunch + Echo + Stereo:** bit depth, sample-rate reduction, tempo-synced ping-pong echo,
+  **Game Boy-style stereo** (each note on its own side) or a bar-synced **swing** from side to side
+- **Game sounds:** one tap makes a new **COIN, JUMP, LASER, HIT, BOOM, POWER-UP, BLIP** or **BOMB**;
+  **SAVE WAV** for your own game; **jingles** (level clear, game over, got item, fanfare) written in your key
+- **Sound codes:** **SHARE** turns a sound into a line of text (`BB1-...`) a friend can paste into their BitBuddy
+- **31 presets**, including leads, bass, chords, drums, sound effects, and demos of the 1.1 + 1.2 features
 - **My Presets** (save your own), **SURPRISE ME!**, per-section **dice** and **MUTATE**
-- **In the app:** **JAM** (a drums + bass + chords band in your key, 4 styles) and **REC** (WAV + MIDI)
-- **Your layout:** hide boxes, drag them around (**VIEW** menu), 4 colour themes, and BIT the dancing mascot
+- **In the app:** **JAM** (a drums + bass + chords band in your key, 4 styles), **REC** (WAV + MIDI),
+  **REC VOICE** (record your voice for the VOICE wave), **HUM** (sing a tune, BitBuddy plays it) and
+  **MIDI SONGS** (open any `.mid`: melody on your sound, triangle bass, pulse chords, drum kit)
+- **Phone tricks:** slide a finger up / down on a key to bend it (everywhere), **shake** the phone for a
+  new sound, **tilt** it for wobble
+- **Your layout:** hide boxes, drag them around, hide the dice (**VIEW** menu), 4 colour themes, and BIT the dancing mascot
 - **Built-in help:** hover any control for a plain-English explanation; a numbered 1–5 layout walks you through making a sound
 - Live waveform "screen", on-screen keyboard, and computer-keyboard playing that stays active while you
   tweak knobs (a **KEYS ON** indicator shows when your letter keys are playing)
@@ -96,8 +106,8 @@ That one script builds everything (Release) and runs every check, writing report
 
 | Check | What it proves |
 |---|---|
-| Audio tests (`test-results.txt`) | 77 tests that load the real VST3 like a DAW: tuning, arpeggiators, drums, presets, save/restore, echo tails, limiter, Scale Lock, Smart chords, filter, chip modes, macros, drawn waves, Jam band, recording, My Presets, CPU |
-| Focus + layout test (`focus-test.txt`) | opens a real window, simulates clicks, checks your computer keys keep playing; hides, moves and resets boxes |
+| Audio tests (`test-results.txt`) | 105 tests that load the real VST3 like a DAW: tuning, arpeggiators, drums, presets, save/restore, echo tails, limiter, Scale Lock, Smart chords, filter, chip modes, macros, drawn waves, Jam band, recording, My Presets, sweep modes, vibrato shapes, stereo, sound effects, SAVE WAV, jingles, sound codes, VOICE wave, HUM pitch tracking, MIDI songs, slide-to-bend, CPU |
+| Focus + layout test (`focus-test.txt`) | opens a real window, simulates clicks and a slide on a key, checks your computer keys keep playing; hides, moves and resets boxes; hides the dice; phone layout |
 | Benchmark (`benchmark.txt`) | CPU cost of chords, a lead, drums and idle |
 | [pluginval](https://github.com/Tracktion/pluginval) (`pluginval.txt`) | industry plugin validator at strictness level 10 |
 
@@ -121,8 +131,16 @@ src/            the plugin
   Effects.h           C64 filter, console tone, crunch, ping-pong echo, DC blocker
   JamBand.*           the JAM backing band (3 more chip engines + a step sequencer)
   Recorder.*          REC: WAV + MIDI recording on a background thread
+  NotePlayer.*        plays note lists sample-accurately (sound effects, jingles, MIDI songs)
+  GameSounds.*        the sound effect recipes and the jingle writer
+  SoundCode.cpp       SHARE: a sound as a line of text (and back)
+  VoiceSample.*       the VOICE wave's recording (trim, resample, built-in "aah")
+  MicInput.*          the app's microphone (REC VOICE, HUM)
+  HumTracker.*        HUM: YIN pitch tracking -> notes
+  SongPlayer.*        MIDI SONGS: who plays what + the song band
+  Motion*             phone tricks: the motion sensor (Android Java listener, iOS CoreMotion)
   Parameters.*        every knob the DAW can see and automate
-  Presets.*           the 27 factory presets
+  Presets.*           the 31 factory presets
   PluginProcessor.*   glue between the DAW, MIDI and the engine; save/load; My Presets
   PluginEditor.*      the UI (boxes, screen editors, keyboard, help, BIT, layout)
   RetroLookAndFeel.*  pixel font, colour themes, LED knobs, settings file

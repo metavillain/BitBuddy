@@ -1,4 +1,4 @@
-Random seed: 0x706fe1f
+Random seed: 0x375930e
 Validation started
 Strictness level: 10
 -----------------------------------------------------------------
@@ -6,7 +6,7 @@ Starting tests in: pluginval / Scan for plugins located in: C:\Claude\BitBuddy\b
 Num plugins found: 1
 
 Testing plugin: VST3-BitBuddy-5a65162b-9ab49ecf
-BitBuddy Labs: BitBuddy v1.1.0
+BitBuddy Labs: BitBuddy v1.2.0
 Completed tests in pluginval / Scan for plugins located in: C:\Claude\BitBuddy\build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
 -----------------------------------------------------------------
 Starting tests in: pluginval / Open plugin (cold)...
@@ -26,7 +26,7 @@ Reported taillength: 2
 Completed tests in pluginval / Plugin info
 -----------------------------------------------------------------
 Starting tests in: pluginval / Plugin programs...
-Num programs: 27
+Num programs: 31
 All program names checked
 
 Changing program
