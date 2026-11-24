@@ -76,7 +76,7 @@
     <MODULE id="juce_gui_extra" showAllCode="1"/>
   </MODULES>
   <EXPORTFORMATS>
-    <ANDROIDSTUDIO targetFolder="Builds/Android" androidMinimumSDK="24" androidTargetSDK="35"
+    <ANDROIDSTUDIO targetFolder="Builds/Android" androidMinimumSDK="24" androidTargetSDK="36"
                    androidScreenOrientation="landscape" androidVersionCode="120" bigIcon="BbIcon"
                    microphonePermissionNeeded="1" androidInternetNeeded="0" androidExternalWriteNeeded="0"
                    androidEnableContentSharing="1"

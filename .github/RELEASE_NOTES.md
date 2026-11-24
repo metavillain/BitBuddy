@@ -32,6 +32,8 @@
 | **Mac** (Apple Silicon or Intel, macOS 10.13+) | **BitBuddy-…-macOS.zip** (below) |
 | **Android** 7.0+ phone or tablet | **BitBuddy-…-Android.apk** (below) |
 
+(*BitBuddy-…-GooglePlay.aab* is for publishing on the Google Play Store - you can't install it directly.)
+
 Unzip it and open **READ ME FIRST.txt**. The short version:
 
 - **Windows:** double-click `BitBuddy.exe` to play right away, or `Install BitBuddy.bat` to use it in

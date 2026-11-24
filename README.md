@@ -21,6 +21,8 @@ is quick and fun even if you've never made music before.
 | **iPhone / iPad** | app + AUv3 (GarageBand, AUM…) | 🧪 builds and runs in the iPad simulator; sharing it needs a paid Apple Developer account |
 
 **New to all this?** Start with the **[Beginner's Guide](docs/BEGINNERS-GUIDE.md)**.
+Publishing on Google Play: see **[docs/play-store](docs/play-store/README.md)** (bundle, signing, store
+text and pictures, [privacy policy](docs/PRIVACY.md)).
 
 ## Features
 

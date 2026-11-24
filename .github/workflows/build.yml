@@ -143,20 +143,50 @@ jobs:
             21
           cache: gradle   # keep downloaded build parts between runs (fewer downloads, fewer 429s)
 
-      - name: Android NDK + signing key
+      # NDK r28+ builds native code for 16 KB memory pages (a Google Play requirement)
+      - name: Android SDK 36 + NDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "ndk;28.1.13356709" > /dev/null
+
+      # The APK + Play bundle are signed with BitBuddy's upload key when the repository has it (GitHub
+      # secrets ANDROID_UPLOAD_KEYSTORE_BASE64 + ANDROID_UPLOAD_KEYSTORE_PASSWORD, see docs/play-store/).
+      # Without them (forks, pull requests) a throwaway key is used: fine for testing, not for Play.
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.1.13356709" > /dev/null
           mkdir -p ~/.android
           keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey \
             -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=BitBuddy,O=BitBuddy Labs,C=US"
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.keystore"
+            {
+              echo "BB_UPLOAD_KEYSTORE=$RUNNER_TEMP/upload.keystore"
+              echo "BB_UPLOAD_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            } >> "$GITHUB_ENV"
+            cat >> android/Builds/Android/app/build.gradle <<'EOF'
 
-      - name: Build the APK
+          // CI: sign with BitBuddy's upload key (added by .github/workflows/build.yml)
+          if (System.getenv("BB_UPLOAD_KEYSTORE")) {
+              android.signingConfigs.juceSigning.storeFile = file(System.getenv("BB_UPLOAD_KEYSTORE"))
+              android.signingConfigs.juceSigning.storePassword = System.getenv("BB_UPLOAD_KEYSTORE_PASSWORD")
+              android.signingConfigs.juceSigning.keyAlias = "bitbuddy-upload"
+              android.signingConfigs.juceSigning.keyPassword = System.getenv("BB_UPLOAD_KEYSTORE_PASSWORD")
+              android.signingConfigs.juceSigning.storeType = "pkcs12"
+          }
+          EOF
+            echo "Signing with the BitBuddy upload key"
+          else
+            echo "::warning::No upload key in this repository's secrets: signed with a throwaway key (not for Google Play)"
+          fi
+
+      - name: Build the APK + the Google Play bundle (.aab)
         working-directory: android/Builds/Android
         run: |
           chmod +x gradlew
           # Maven Central sometimes rate-limits GitHub's shared machines (HTTP 429): retry
           for attempt in 1 2 3; do
-            ./gradlew assembleRelease_Release --no-daemon --quiet && break
+            ./gradlew assembleRelease_Release bundleRelease_Release --no-daemon --quiet && break
             if [ "$attempt" = 3 ]; then exit 1; fi
             echo "Gradle failed (attempt $attempt), usually a temporary download limit - retrying in 60 s"
             sleep 60
@@ -164,6 +194,9 @@ jobs:
           version="$(sed -n 's/^project(BitBuddy VERSION \([0-9.]*\).*/\1/p' "$GITHUB_WORKSPACE/CMakeLists.txt")"
           mkdir -p "$GITHUB_WORKSPACE/dist"
           cp "$(find app/build/outputs/apk -name '*.apk' | head -1)" "$GITHUB_WORKSPACE/dist/BitBuddy-$version-Android.apk"
+          cp "$(find app/build/outputs/bundle -name '*.aab' | head -1)" "$GITHUB_WORKSPACE/dist/BitBuddy-$version-GooglePlay.aab"
+          # Show who signed it (the upload key, or the throwaway one)
+          keytool -printcert -jarfile "$GITHUB_WORKSPACE/dist/BitBuddy-$version-Android.apk" | grep -m1 "Owner:" || true
 
       - name: Enable hardware acceleration for the emulator
         run: |
@@ -183,7 +216,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: BitBuddy-Android
-          path: dist/*.apk
+          path: |
+            dist/*.apk
+            dist/*.aab
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v7
@@ -239,6 +274,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
-          gh release create "$GITHUB_REF_NAME" artifacts/*.zip artifacts/*.apk
+          gh release create "$GITHUB_REF_NAME" artifacts/*.zip artifacts/*.apk artifacts/*.aab
           --title "BitBuddy ${GITHUB_REF_NAME#v}"
           --notes-file .github/RELEASE_NOTES.md

@@ -27,6 +27,7 @@ public:
 
     /** True in the BitBuddy app (not when BitBuddy is a plugin in a DAW). */
     static bool isAvailable();
+    static inline bool pretendAvailable = false;   // (store screenshots: show the app's microphone buttons)
 
     /** Asks for permission the first time (phones), switches the microphone on and
         starts calling onAudio. `done` is called on the message thread. */

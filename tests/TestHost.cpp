@@ -1966,6 +1966,105 @@ static int runSnapshot (const File& outDir)
 }
 
 //==============================================================================
+// Google Play store pictures (docs/play-store/): the 512 px icon, the 1024 x 500 feature graphic,
+// phone + tablet screenshots, and a portrait-tablet check (Android 16 lets tablets ignore
+// "landscape only").   BitBuddyTestHost --play-assets <dir> <icon.png>
+static int runPlayAssets (const File& outDir, const File& iconFile)
+{
+    outDir.createDirectory();
+    bb::useSettingsFile (File::getSpecialLocation (File::tempDirectory).getChildFile ("BitBuddyPlayAssets.settings"));
+    bb::applyTheme (0);
+    int written = 0;
+    auto save = [&] (const Image& image, const String& name)
+    {
+        written += writePng (image, outDir.getChildFile (name)) ? 1 : 0;
+    };
+
+    // 1. Icon, 512 x 512
+    const auto icon = ImageFileFormat::loadFrom (iconFile);
+    if (icon.isValid())
+        save (icon.rescaled (512, 512, Graphics::highResamplingQuality), "icon-512.png");
+
+    // 2. Feature graphic, 1024 x 500: the rainbow logo, BIT, and what it is
+    {
+        Image art (Image::RGB, 1024, 500, true);
+        {
+        Graphics g (art);
+        g.fillAll (bb::pal::bg);
+        g.setColour (bb::pal::navy);
+        for (int y = 0; y < 500; y += 8)   // faint scanlines, like an old screen
+            g.fillRect (0, y, 1024, 2);
+
+        const String logo ("BITBUDDY");
+        const Colour colours[] = { bb::pal::red, bb::pal::orange, bb::pal::yellow, bb::pal::lime, bb::pal::green,
+                                   bb::pal::cyan, bb::pal::sky, bb::pal::blue };
+        g.setFont (bb::pixelFont (78.0f));
+        for (int i = 0; i < logo.length(); ++i)
+        {
+            const Rectangle<int> cell ((1024 - 8 * 82) / 2 + i * 82, 120, 84, 100);   // (centred)
+            g.setColour (bb::pal::purple);
+            g.drawText (String::charToString (logo[i]), cell.translated (6, 8), Justification::centred);
+            g.setColour (colours[i]);
+            g.drawText (String::charToString (logo[i]), cell, Justification::centred);
+        }
+        g.setColour (bb::pal::white);
+        g.setFont (bb::pixelFont (20.0f));
+        g.drawText ("MAKE 8-BIT MUSIC IN SECONDS", 70, 250, 884, 40, Justification::centred);
+        g.setColour (bb::pal::light);
+        g.setFont (bb::textFont (26.0f, true));
+        g.drawText ("Retro synth  -  game sound effects  -  sing a tune, hear it chiptune", 70, 300, 884, 40, Justification::centred);
+
+        bb::Mascot bit;
+        bit.setSize (46, 52);
+        bit.update (0.0f, false, 120.0);
+        g.drawImageAt (bit.createComponentSnapshot (bit.getLocalBounds(), true, 2.6f), 452, 360);
+        }   // (the drawing is finished when the Graphics goes away)
+        save (art, "feature-graphic.png");
+    }
+
+    // 3. Screenshots of the app: phone (1920 x 1080, keyboard pinned, the page scrolls) and tablet (2560 x 1600)
+    AudioProcessor::setTypeOfNextNewPlugin (AudioProcessor::wrapperType_Standalone);   // JAM, REC, MIDI SONGS
+    bb::MicInput::pretendAvailable = true;                                               // REC VOICE + HUM buttons
+    auto procPtr = std::make_unique<BitBuddyProcessor>();
+    auto& proc = *procPtr;
+    auto shot = [&] (int w, int h, const String& preset, std::initializer_list<int> notes, float scrollFraction,
+                     const String& name, int theme = 0)
+    {
+        bb::applyTheme (theme);
+        selectProgram (proc, preset);
+        proc.prepareToPlay (44100.0, 512);
+        for (int n : notes)
+            proc.keyboardState.noteOn (1, n, 0.8f);
+        std::unique_ptr<AudioProcessorEditor> editor (proc.createEditor());
+        editor->setVisible (true);
+        editor->setSize (w, h);
+        AudioBuffer<float> buffer (2, 512);   // play a little so the SCREEN shows the sound
+        for (int i = 0; i < 40; ++i)
+        {
+            MidiBuffer midi;
+            proc.processBlock (buffer, midi);
+        }
+        MessageManager::getInstance()->runDispatchLoopUntil (400);
+        if (auto* viewport = findComponent<Viewport> (*editor); viewport != nullptr && viewport->isVisible())
+            viewport->setViewPosition (0, roundToInt (scrollFraction * (viewport->getViewedComponent()->getHeight()
+                                                                        - viewport->getViewHeight())));
+        MessageManager::getInstance()->runDispatchLoopUntil (200);
+        save (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), name);
+        for (int n : notes)
+            proc.keyboardState.noteOff (1, n, 0.0f);
+    };
+    shot (1920, 1080, "Hero Lead", { 64, 67 }, 0.0f, "phone-1-play.png");
+    shot (1920, 1080, "Smart Chords", { 60 }, 0.35f, "phone-2-chords.png");
+    shot (1920, 1080, "Coin Pickup", {}, 1.0f, "phone-3-game-sounds.png");
+    shot (1920, 1080, "Real NES Lead", { 72 }, 0.0f, "phone-4-gameboy-theme.png", 1);
+    shot (2560, 1600, "PWM Strings", { 60, 64, 67 }, 0.0f, "tablet-1.png");
+    shot (1600, 2560, "Hero Lead", { 69 }, 0.0f, "check-tablet-portrait.png");   // (not for the store: a layout check)
+    bb::applyTheme (0);
+    return written >= 8 ? 0 : 1;
+}
+
+
+//==============================================================================
 // CPU benchmark: how many times faster than real time each scenario renders.
 static int runBench (const String& path)
 {
@@ -2358,6 +2457,8 @@ int main (int argc, char* argv[])
         return runDemo (args[1], File (args[2]));
     if (args.size() >= 2 && args[0] == "--snapshot")
         return runSnapshot (File (args[1]));
+    if (args.size() >= 3 && args[0] == "--play-assets")
+        return runPlayAssets (File (args[1]), File (args[2]));
     if (args.size() >= 1 && args[0] == "--focus-test")
         return runFocusTest();
     if (args.size() >= 2 && args[0] == "--bench")

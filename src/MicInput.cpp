@@ -30,7 +30,7 @@ MicInput::~MicInput()
 
 bool MicInput::isAvailable()
 {
-    return appDeviceManager() != nullptr;
+    return pretendAvailable || appDeviceManager() != nullptr;
 }
 
 void MicInput::start (AudioFn fn, DoneFn done)
