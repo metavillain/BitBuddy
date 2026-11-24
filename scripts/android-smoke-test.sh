@@ -18,11 +18,20 @@ case "$activity" in
     */*) ;;
     *) echo "FAIL: no launcher activity found for $pkg"; exit 1 ;;
 esac
-adb shell am start -W -n "$activity"
-sleep 2
-pid="$(adb shell pidof "$pkg" | tr -d '\r' || true)"
+# A freshly booted emulator is still busy with its own start-up jobs for a while and can
+# drop a launch on the floor: let it settle, and try the launch up to 3 times
+sleep 20
+pid=""
+for attempt in 1 2 3; do
+    adb shell am start -W -n "$activity"
+    sleep 5
+    pid="$(adb shell pidof "$pkg" | tr -d '\r' || true)"
+    [ -n "$pid" ] && break
+    echo "BitBuddy isn't running yet (launch attempt $attempt) - the emulator may still be starting up"
+    sleep 10
+done
 echo "BitBuddy pid after launch: ${pid:-none}"
-sleep 13
+sleep 10   # then it must still be running (a crash or quit fails the test below)
 
 mkdir -p dist
 adb exec-out screencap -p > dist/android-screenshot.png
