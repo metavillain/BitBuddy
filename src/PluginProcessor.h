@@ -179,6 +179,9 @@ public:
     /** Finds a sound code anywhere in the text and loads it. Returns false (and
         changes nothing) when there is no valid code. */
     bool loadSoundCode (const juce::String& text);
+    /** Checks a sound code without loading it (for the paste box): its sound's name when ok. */
+    enum class CodeCheck { noCode, broken, tooNew, ok };
+    static CodeCheck checkSoundCode (const juce::String& text, juce::String& soundName);
 
     /** Plays scheduled notes: sound effects, jingles (and in the app, MIDI songs). */
     bb::NotePlayer notePlayer;

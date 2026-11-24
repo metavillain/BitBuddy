@@ -109,12 +109,25 @@ juce::String BitBuddyProcessor::getSoundCode()
     return kPrefix + toCodeText (data);
 }
 
-bool BitBuddyProcessor::loadSoundCode (const juce::String& text)
+namespace
 {
+struct DecodedCode
+{
+    juce::String name;
+    std::vector<float> values;
+    bool hasDrawing = false;
+    bb::CustomWave drawing {};
+    std::array<bb::Macro, bb::kNumMacroLanes> macros {};
+};
+
+BitBuddyProcessor::CodeCheck decodeSoundCode (const juce::String& text, DecodedCode& code)
+{
+    using Check = BitBuddyProcessor::CodeCheck;
+
     // The code can be anywhere in the text ("try my sound: BB1-..."), even broken over lines
     const int start = text.indexOf (kPrefix);
     if (start < 0)
-        return false;
+        return Check::noCode;
     juce::String body;
     for (auto c : text.substring (start + (int) std::strlen (kPrefix)))
     {
@@ -126,38 +139,36 @@ bool BitBuddyProcessor::loadSoundCode (const juce::String& text)
 
     juce::MemoryBlock data;
     if (body.length() < 8 || ! fromCodeText (body, data) || data.getSize() < 6)
-        return false;
+        return Check::broken;
     const size_t length = data.getSize() - 2;
     const auto expected = (std::uint16_t) (((std::uint8_t) data[length] << 8) | (std::uint8_t) data[length + 1]);
     if (checksum (data, length) != expected)
-        return false;
+        return Check::broken;
 
     juce::MemoryInputStream in (data.getData(), length, false);
     if (in.readByte() != 1)
-        return false;   // a code from a newer BitBuddy
+        return Check::tooNew;   // a code from a newer BitBuddy
 
     const int nameBytes = (std::uint8_t) in.readByte();
     juce::MemoryBlock nameData;
     in.readIntoMemoryBlock (nameData, nameBytes);
-    const auto name = juce::String::fromUTF8 ((const char*) nameData.getData(), (int) nameData.getSize());
+    code.name = juce::String::fromUTF8 ((const char*) nameData.getData(), (int) nameData.getSize());
 
     const int count = (std::uint8_t) in.readByte();
-    std::vector<float> values;
     for (int i = 0; i < count && ! in.isExhausted(); ++i)
-        values.push_back ((float) (std::uint16_t) in.readShort() / 65535.0f);
-    if ((int) values.size() != count)
-        return false;
+        code.values.push_back ((float) (std::uint16_t) in.readShort() / 65535.0f);
+    if ((int) code.values.size() != count)
+        return Check::broken;
 
     const int extras = (std::uint8_t) in.readByte();
-    bb::CustomWave wave = getCustomWave();
-    if ((extras & 1) != 0)
+    code.hasDrawing = (extras & 1) != 0;
+    if (code.hasDrawing)
         for (int i = 0; i < bb::kCustomWaveSteps; i += 2)
         {
             const auto b = (std::uint8_t) in.readByte();
-            wave[(size_t) i] = (std::uint8_t) (b >> 4);
-            wave[(size_t) i + 1] = (std::uint8_t) (b & 15);
+            code.drawing[(size_t) i] = (std::uint8_t) (b >> 4);
+            code.drawing[(size_t) i + 1] = (std::uint8_t) (b & 15);
         }
-    std::array<bb::Macro, bb::kNumMacroLanes> newMacros {};
     if ((extras & 2) != 0)
     {
         const int lanes = (std::uint8_t) in.readByte();
@@ -172,22 +183,41 @@ bool BitBuddyProcessor::loadSoundCode (const juce::String& text)
             for (int i = juce::jmax (1, m.length); i < bb::kMacroSteps; ++i)   // like macroFromString: the rest repeat the last step
                 m.values[(size_t) i] = m.values[(size_t) i - 1];
             if (juce::isPositiveAndBelow (lane, bb::kNumMacroLanes))
-                newMacros[(size_t) lane] = m;
+                code.macros[(size_t) lane] = m;
         }
     }
+    if (code.name.isEmpty())
+        code.name = "Shared sound";
+    return Check::ok;
+}
+} // namespace
+
+BitBuddyProcessor::CodeCheck BitBuddyProcessor::checkSoundCode (const juce::String& text, juce::String& soundName)
+{
+    DecodedCode code;
+    const auto result = decodeSoundCode (text, code);
+    soundName = code.name;
+    return result;
+}
+
+bool BitBuddyProcessor::loadSoundCode (const juce::String& text)
+{
+    DecodedCode code;
+    if (decodeSoundCode (text, code) != CodeCheck::ok)
+        return false;
 
     // Everything checks out: reset to defaults (keeping your song's settings), then apply
     bb::applyValues (apvts, {});
-    for (int i = 0; i < juce::jmin (count, kNumCodeParams); ++i)
+    for (int i = 0; i < juce::jmin ((int) code.values.size(), kNumCodeParams); ++i)
         if (auto* p = apvts.getParameter (kCodeParams[i]))
-            p->setValueNotifyingHost (values[(size_t) i]);
-    if ((extras & 1) != 0)
-        setCustomWave (wave);
+            p->setValueNotifyingHost (code.values[(size_t) i]);
+    if (code.hasDrawing)
+        setCustomWave (code.drawing);
     for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
-        setMacro (lane, newMacros[(size_t) lane]);
+        setMacro (lane, code.macros[(size_t) lane]);
     updateHostDisplay (juce::AudioProcessor::ChangeDetails().withNonParameterStateChanged (true));
 
-    customName = (name.isNotEmpty() ? name : juce::String ("Shared sound")) + " (code)";
+    customName = code.name + " (code)";
     userPresetLoaded = false;
     return true;
 }

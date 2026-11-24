@@ -255,6 +255,41 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
 };
 
+/** SHARE's box: shows your sound code (already copied), or takes a friend's code with
+    a live check of what it is before you LOAD it (added in 1.2). Covers the window. */
+class SoundCodeDialog : public juce::Component
+{
+public:
+    enum class Mode { show, paste };
+    SoundCodeDialog (BitBuddyProcessor&, Mode);
+
+    std::function<void()> onClose;                      // the owner removes the box
+    std::function<void (const juce::String&)> onMessage;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void parentSizeChanged() override                   { if (auto* p = getParentComponent()) setBounds (p->getLocalBounds()); }
+    void mouseUp (const juce::MouseEvent&) override;    // a click outside the box closes it
+    bool keyPressed (const juce::KeyPress&) override;   // Esc closes
+    void focusTextBox();
+    juce::TextEditor& getTextBox() noexcept             { return codeBox; }   // (for tests)
+    void pressLoad()                                    { load(); }           // (for tests)
+
+private:
+    void check();
+    void load();
+    void close();
+
+    BitBuddyProcessor& proc;
+    Mode mode;
+    bool loaded = false, codeOk = false;
+    juce::Label title, info, status;
+    juce::TextEditor codeBox;
+    juce::TextButton mainButton, secondButton, cancelButton { "CANCEL" };
+    juce::Rectangle<int> box;
+    juce::ScopedMessageBox shareBox;
+};
+
 /** Retro green "screen" that shows the live waveform. */
 class Scope : public juce::Component, public juce::SettableTooltipClient
 {
@@ -473,6 +508,8 @@ public:
     /** VIEW > Show dice buttons (saved, like the layout). */
     void setDiceShown (bool shouldShow);
     bool areDiceShown() const noexcept { return diceShown; }
+    /** SHARE: the box with your sound code, or the box to paste a friend's code into. */
+    void openCodeDialog (SoundCodeDialog::Mode);
 
 private:
     void layoutBoxes();
@@ -513,9 +550,8 @@ private:
     juce::TextButton prevButton { "<" }, nextButton { ">" };
     juce::TextButton saveButton { "SAVE" }, mutateButton { "MUTATE" }, shareButton { "SHARE" };
     void showShareMenu();
-    void askForSoundCode();
     void showHint (const juce::String& text);
-    juce::ScopedMessageBox shareTextBox;
+    std::unique_ptr<SoundCodeDialog> codeDialog;
     juce::TextButton surpriseButton { "SURPRISE ME!" };
     juce::ComboBox presetBox;
     juce::Label presetTip;

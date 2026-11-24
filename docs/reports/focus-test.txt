@@ -16,6 +16,7 @@
   PASS  Simulated click on COIN made a new coin soundCoin #2
   PASS  Keys still work after clicking LEVEL CLEAR button
   PASS  Slide up on a key: same note keeps playing, bends up, back in tune on releasenote G4 held, bend 1.23 st -> 0.00
-  PASS  Keys come back after a drop-down menu closesmenu did not open
+  PASS  SHARE > Paste: box filled from the clipboard, checks the code, LOAD confirms, keys come backfound Siren, typing in the box, typo caught, loaded + confirmed, closed, keys back
+  PASS  Keys come back after a drop-down menu closesmenu opened + closed
 
-  16 passed, 0 failed
+  17 passed, 0 failed

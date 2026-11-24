@@ -247,8 +247,9 @@ like a real NES tune: the melody plays with *your* sound, the bass on a triangle
 pulse wave, and the drums on the drum kit. Change your sound while it plays!
 
 **Share a sound.** **SHARE → Copy my sound code** turns your sound into a line of text starting with
-`BB1-`. Send it to a friend; they press **SHARE → Paste a sound code** and get exactly your sound (their
-KEY, SCALE and volume stay theirs).
+`BB1-` (it's copied for you). Send it to a friend; they press **SHARE → Paste a sound code**, paste it
+into the box (BitBuddy checks it and shows the sound's name), press **LOAD** and get exactly your sound
+(their KEY, SCALE and volume stay theirs).
 
 **New movement.** Under the knobs in box 4: vibrato can be **SMOOTH**, **TRILL** (jumps to the note above -
 try the *Trill Lead* preset) or **RANDOM**. A sweep can **SLIDE** into the note, keep going **FOREVER**

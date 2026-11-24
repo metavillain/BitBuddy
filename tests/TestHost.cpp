@@ -1929,6 +1929,24 @@ static int runSnapshot (const File& outDir)
         }
     }
 
+    // SHARE: the box with your code, and the paste box checking a friend's code
+    {
+        selectProgram (proc, "Laser Zap");
+        std::unique_ptr<AudioProcessorEditor> editor (proc.createEditor());
+        editor->setVisible (true);
+        if (auto* panel = findComponent<bb::MainPanel> (*editor))
+        {
+            panel->openCodeDialog (bb::SoundCodeDialog::Mode::show);
+            MessageManager::getInstance()->runDispatchLoopUntil (300);
+            writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), outDir.getChildFile ("ui-share-code.png"));
+            panel->openCodeDialog (bb::SoundCodeDialog::Mode::paste);   // (the code is on the clipboard now)
+            MessageManager::getInstance()->runDispatchLoopUntil (300);
+            writePng (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f), outDir.getChildFile ("ui-paste-code.png"));
+            if (auto* box = findComponent<bb::SoundCodeDialog> (*editor))
+                box->exitModalState (0);
+        }
+    }
+
     // A phone held sideways: top of the page, and scrolled to the bottom
     {
         selectProgram (proc, "Smart Chords");
@@ -2218,6 +2236,47 @@ static int runFocusTest()
                        + String (proc.getTouchBend(), 2));
     }
 
+
+    // 2c. SHARE > Paste a sound code: a box that checks the code before loading, then confirms
+    if (auto* panel = findComponent<bb::MainPanel> (*editor))
+    {
+        auto friendPtr = std::make_unique<BitBuddyProcessor>();
+        friendPtr->selectPreset (programIndex (*friendPtr, "Siren"));
+        const auto code = friendPtr->getSoundCode();
+        SystemClipboard::copyTextToClipboard ("try mine!\n" + code);
+        panel->openCodeDialog (bb::SoundCodeDialog::Mode::paste);
+        MessageManager::getInstance()->runDispatchLoopUntil (200);
+        auto* box = findComponent<bb::SoundCodeDialog> (*editor);
+        auto findText = [&] (const String& start)
+        {
+            auto* label = findComponent<Label> (*box, [&] (Label& l) { return l.isVisible() && l.getText().startsWith (start); });
+            return label != nullptr;
+        };
+        auto* load = box != nullptr ? findButton (*box, "LOAD") : nullptr;
+        const bool prefilled = box != nullptr && box->getTextBox().getText().contains (code) && findText ("Found: \"Siren\"")
+                            && load != nullptr && load->isEnabled();
+        const bool typingThere = box != nullptr && box->getTextBox().hasKeyboardFocus (true) && ! piano->hasKeyboardFocus (false);
+        bool typoCaught = false, loadedOk = false, closedOk = false;
+        if (box != nullptr && load != nullptr)
+        {
+            box->getTextBox().setText (code.dropLastCharacters (6), true);   // cut off
+            MessageManager::getInstance()->runDispatchLoopUntil (100);        // (text boxes report changes a moment later)
+            typoCaught = findText ("This code is cut off") && ! load->isEnabled();
+            box->getTextBox().setText (code, true);
+            MessageManager::getInstance()->runDispatchLoopUntil (100);
+            box->pressLoad();
+            loadedOk = proc.getDisplayPresetName() == "Siren (code)" && findText ("\"Siren (code)\" is your sound now");
+            if (auto* done = findButton (*box, "DONE"))
+                clickOn (*peer, *editor, *done);
+            MessageManager::getInstance()->runDispatchLoopUntil (300);
+            closedOk = findComponent<bb::SoundCodeDialog> (*editor) == nullptr && piano->hasKeyboardFocus (false);
+        }
+        res.check (prefilled && typingThere && typoCaught && loadedOk && closedOk,
+                   "SHARE > Paste: box filled from the clipboard, checks the code, LOAD confirms, keys come back",
+                   String (prefilled ? "found Siren" : "NOT FOUND") + ", " + (typingThere ? "typing in the box" : "BOX HAS NO FOCUS") + ", "
+                       + (typoCaught ? "typo caught" : "TYPO NOT CAUGHT") + ", " + (loadedOk ? "loaded + confirmed" : "NOT LOADED")
+                       + ", " + (closedOk ? "closed, keys back" : "NOT CLOSED / KEYS LOST"));
+    }
 
     // 3. Open and close a drop-down menu: focus must come back by itself
     if (auto* combo = findComponent<ComboBox> (*editor))

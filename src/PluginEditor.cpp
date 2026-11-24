@@ -898,6 +898,217 @@ void SongBox::openMidi()
 
 
 //==============================================================================
+SoundCodeDialog::SoundCodeDialog (BitBuddyProcessor& p, Mode m) : proc (p), mode (m)
+{
+    title.setFont (pixelFont (10.0f));
+    title.setColour (juce::Label::textColourId, pal::cyan);
+    for (auto* l : { &info, &status })
+    {
+        l->setFont (textFont (15.0f, l == &status));
+        l->setColour (juce::Label::textColourId, pal::white);
+        l->setJustificationType (juce::Justification::topLeft);
+        l->setMinimumHorizontalScale (1.0f);   // long lines wrap instead of squashing
+    }
+
+    codeBox.setMultiLine (true, true);   // (long codes wrap onto more lines)
+    codeBox.setReturnKeyStartsNewLine (false);
+    codeBox.setFont (textFont (15.0f));
+    codeBox.setColour (juce::TextEditor::backgroundColourId, pal::screen);
+    codeBox.setColour (juce::TextEditor::textColourId, pal::lime);
+    codeBox.setColour (juce::TextEditor::outlineColourId, pal::cyan);
+    codeBox.setColour (juce::TextEditor::focusedOutlineColourId, pal::yellow);
+    codeBox.setColour (juce::CaretComponent::caretColourId, pal::yellow);
+
+    mainButton.setColour (juce::TextButton::buttonColourId, pal::green);
+    cancelButton.onClick = [this] { close(); };
+    mainButton.onClick = [this] { mode == Mode::paste && ! loaded ? load() : close(); };
+
+    if (mode == Mode::show)
+    {
+        const auto code = proc.getSoundCode();
+        juce::SystemClipboard::copyTextToClipboard (code);
+        title.setText ("YOUR SOUND CODE", juce::dontSendNotification);
+        info.setText ("Copied! Paste it into a message to a friend. They press SHARE > Paste a sound code "
+                      "and get exactly this sound (" + proc.getDisplayPresetName().trimCharactersAtEnd (" *") + ").",
+                      juce::dontSendNotification);
+        codeBox.setText (code, false);
+        codeBox.setReadOnly (true);
+        codeBox.setCaretVisible (false);
+        mainButton.setButtonText ("DONE");
+       #if JUCE_CONTENT_SHARING && (JUCE_IOS || JUCE_ANDROID)
+        secondButton.setButtonText ("SEND...");
+        secondButton.onClick = [this, code]
+        {
+            shareBox = juce::ContentSharer::shareTextScoped ("My BitBuddy sound - open BitBuddy, press SHARE > Paste a sound code:\n" + code,
+                                                             [] (bool, const juce::String&) {}, this);
+        };
+       #else
+        secondButton.setButtonText ("COPY AGAIN");
+        secondButton.onClick = [this, code]
+        {
+            juce::SystemClipboard::copyTextToClipboard (code);
+            info.setText ("Copied again! Paste it into a message to a friend.", juce::dontSendNotification);
+        };
+       #endif
+    }
+    else
+    {
+        title.setText ("PASTE A SOUND CODE", juce::dontSendNotification);
+        info.setText ("Paste the code your friend sent you into the box (it starts with BB1-).", juce::dontSendNotification);
+        mainButton.setButtonText ("LOAD");
+        secondButton.setButtonText ("PASTE");
+        secondButton.setTooltip ("Puts whatever you copied into the box.");
+        secondButton.onClick = [this]
+        {
+            codeBox.setText (juce::SystemClipboard::getTextFromClipboard().substring (0, 2000), false);
+            check();
+        };
+        codeBox.onTextChange = [this] { check(); };
+        codeBox.onReturnKey = [this] { load(); };
+        codeBox.onEscapeKey = [this] { close(); };
+
+        // Something that looks like a code already on the clipboard? Put it in the box for you
+        const auto clip = juce::SystemClipboard::getTextFromClipboard();
+        if (clip.contains ("BB1-"))
+            codeBox.setText (clip.substring (0, 2000), false);
+        check();
+    }
+
+    for (auto* c : { (juce::Component*) &title, (juce::Component*) &info, (juce::Component*) &status, (juce::Component*) &codeBox,
+                     (juce::Component*) &mainButton, (juce::Component*) &secondButton, (juce::Component*) &cancelButton })
+        addAndMakeVisible (c);
+    if (mode == Mode::show)   // (your own code: nothing to check or cancel)
+    {
+        status.setVisible (false);
+        cancelButton.setVisible (false);
+    }
+    setWantsKeyboardFocus (true);
+}
+
+void SoundCodeDialog::focusTextBox()
+{
+   #if ! (JUCE_IOS || JUCE_ANDROID)   // (on phones the on-screen keyboard would cover the box: use PASTE instead)
+    if (mode == Mode::paste)
+    {
+        codeBox.grabKeyboardFocus();
+        codeBox.selectAll();
+    }
+    else
+   #endif
+    grabKeyboardFocus();
+}
+
+void SoundCodeDialog::check()
+{
+    juce::String name;
+    const auto text = codeBox.getText();
+    const auto result = BitBuddyProcessor::checkSoundCode (text, name);
+    codeOk = result == BitBuddyProcessor::CodeCheck::ok;
+    switch (result)
+    {
+        case BitBuddyProcessor::CodeCheck::ok:
+            status.setText ("Found: \"" + name + "\" - press LOAD to play it!", juce::dontSendNotification);
+            status.setColour (juce::Label::textColourId, pal::lime);
+            break;
+        case BitBuddyProcessor::CodeCheck::broken:
+            status.setText ("This code is cut off or has a typo - check it was copied whole.", juce::dontSendNotification);
+            status.setColour (juce::Label::textColourId, pal::orange);
+            break;
+        case BitBuddyProcessor::CodeCheck::tooNew:
+            status.setText ("This code is from a newer BitBuddy - update BitBuddy to load it.", juce::dontSendNotification);
+            status.setColour (juce::Label::textColourId, pal::orange);
+            break;
+        case BitBuddyProcessor::CodeCheck::noCode:
+            status.setText (text.trim().isEmpty() ? "Waiting for a code..." : "That's not a sound code yet (they start with BB1-).",
+                            juce::dontSendNotification);
+            status.setColour (juce::Label::textColourId, pal::light);
+            break;
+    }
+    mainButton.setEnabled (codeOk);
+}
+
+void SoundCodeDialog::load()
+{
+    if (loaded || ! codeOk || ! proc.loadSoundCode (codeBox.getText()))
+        return;
+    loaded = true;
+    const auto name = proc.getDisplayPresetName();
+    title.setText ("LOADED!", juce::dontSendNotification);
+    info.setText ("\"" + name + "\" is your sound now. Play some notes - or SAVE it to keep it.", juce::dontSendNotification);
+    status.setVisible (false);
+    codeBox.setVisible (false);
+    secondButton.setVisible (false);
+    cancelButton.setVisible (false);
+    mainButton.setButtonText ("DONE");
+    mainButton.setEnabled (true);
+    grabKeyboardFocus();
+    proc.notePlayer.play ({ { 0.0, 0.5, 60, 0.8f } });   // so you hear it straight away
+    if (onMessage != nullptr)
+        onMessage ("Loaded \"" + name + "\" from a sound code!");
+    resized();
+}
+
+void SoundCodeDialog::close()
+{
+    if (onClose != nullptr)
+        onClose();
+}
+
+void SoundCodeDialog::mouseUp (const juce::MouseEvent& e)
+{
+    if (! box.contains (e.getPosition()))
+        close();
+}
+
+bool SoundCodeDialog::keyPressed (const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::escapeKey)
+    {
+        close();
+        return true;
+    }
+    if (key == juce::KeyPress::returnKey && loaded)
+    {
+        close();
+        return true;
+    }
+    return true;   // (while the box is open, keys don't play the piano)
+}
+
+void SoundCodeDialog::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colours::black.withAlpha (0.6f));
+    g.setColour (pal::bg);
+    g.fillRect (box);
+    g.setColour (pal::cyan);
+    g.drawRect (box, 2);
+}
+
+void SoundCodeDialog::resized()
+{
+    const int w = juce::jmin (620, getWidth() - 24);
+    const int h = juce::jmin (loaded ? 170 : 290, getHeight() - 16);
+    box = getLocalBounds().withSizeKeepingCentre (w, h);
+
+    auto area = box.reduced (16, 12);
+    title.setBounds (area.removeFromTop (24));
+    auto buttons = area.removeFromBottom (34);
+    info.setBounds (area.removeFromTop (loaded ? 60 : 44));
+    if (! loaded)
+    {
+        status.setBounds (area.removeFromBottom (mode == Mode::paste ? 26 : 0));
+        area.removeFromBottom (4);
+        codeBox.setBounds (area);
+    }
+
+    mainButton.setBounds (buttons.removeFromRight (110).reduced (2, 2));
+    if (cancelButton.isVisible())
+        cancelButton.setBounds (buttons.removeFromRight (110).reduced (2, 2));
+    if (secondButton.isVisible())
+        secondButton.setBounds (buttons.removeFromLeft (130).reduced (2, 2));
+}
+
+//==============================================================================
 WaveButton::WaveButton (int index, const juce::String& shortName, juce::Colour c)
     : juce::Button (shortName), waveIndex (index), accent (c)
 {
@@ -2964,66 +3175,41 @@ void MainPanel::showHint (const juce::String& text)
 
 void MainPanel::showShareMenu()
 {
-    enum { copyCode = 1, sendCode, pasteCode };
     juce::PopupMenu menu;
     menu.addSectionHeader ("SOUND CODES");
-    menu.addItem (copyCode, "Copy my sound code");
-   #if JUCE_CONTENT_SHARING && (JUCE_IOS || JUCE_ANDROID)
-    menu.addItem (sendCode, "Send my sound to a friend...");
-   #endif
-    menu.addItem (pasteCode, "Paste a sound code");
-
+    menu.addItem (1, "Copy my sound code (to send a friend)");
+    menu.addItem (2, "Paste a sound code...");
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (shareButton),
                         [safe = juce::Component::SafePointer<MainPanel> (this)] (int result)
                         {
-                            if (safe == nullptr || result == 0)
-                                return;
-                            auto& self = *safe;
-                            const auto code = self.proc.getSoundCode();
-                            if (result == copyCode)
-                            {
-                                juce::SystemClipboard::copyTextToClipboard (code);
-                                self.showHint ("Copied! Paste it into a message to a friend:  " + code);
-                            }
-                            else if (result == sendCode)
-                            {
-                               #if JUCE_CONTENT_SHARING && (JUCE_IOS || JUCE_ANDROID)
-                                self.shareTextBox = juce::ContentSharer::shareTextScoped (
-                                    "My BitBuddy sound \"" + self.proc.getDisplayPresetName().trimCharactersAtEnd (" *")
-                                        + "\" - open BitBuddy, press SHARE > Paste a sound code:\n" + code,
-                                    [] (bool, const juce::String&) {}, &self);
-                               #endif
-                            }
-                            else if (result == pasteCode)
-                            {
-                                // A code on the clipboard loads straight away; otherwise ask for one
-                                if (self.proc.loadSoundCode (juce::SystemClipboard::getTextFromClipboard()))
-                                    self.showHint ("Loaded \"" + self.proc.getDisplayPresetName() + "\" from the code!");
-                                else
-                                    self.askForSoundCode();
-                            }
+                            if (safe != nullptr && result > 0)
+                                safe->openCodeDialog (result == 1 ? SoundCodeDialog::Mode::show : SoundCodeDialog::Mode::paste);
                         });
 }
 
-void MainPanel::askForSoundCode()
+void MainPanel::openCodeDialog (SoundCodeDialog::Mode mode)
 {
-    auto* w = new juce::AlertWindow ("PASTE A SOUND CODE", "Paste the code your friend sent you (it starts with BB1-).",
-                                     juce::MessageBoxIconType::NoIcon);
-    w->addTextEditor ("code", {}, "Code:");
-    w->addButton ("LOAD", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    w->addButton ("CANCEL", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    addAndMakeVisible (w);
-    w->setCentrePosition (getLocalBounds().getCentre());
-    w->enterModalState (true, juce::ModalCallbackFunction::create (
-        [safe = juce::Component::SafePointer<MainPanel> (this), w] (int result)
+    // Over the whole window (on a phone the panel scrolls, so the panel itself isn't the place)
+    auto* editor = findParentComponentOfClass<juce::AudioProcessorEditor>();
+    juce::Component& host = editor != nullptr ? static_cast<juce::Component&> (*editor) : *this;
+
+    codeDialog = std::make_unique<SoundCodeDialog> (proc, mode);
+    codeDialog->onMessage = [this] (const juce::String& text) { showHint (text); };
+    codeDialog->onClose = [safe = juce::Component::SafePointer<MainPanel> (this)]
+    {
+        juce::MessageManager::callAsync ([safe]   // (not while the box is still handling its own click)
         {
-            if (safe == nullptr || result != 1)
+            if (safe == nullptr || safe->codeDialog == nullptr)
                 return;
-            if (safe->proc.loadSoundCode (w->getTextEditorContents ("code")))
-                safe->showHint ("Loaded \"" + safe->proc.getDisplayPresetName() + "\" from the code!");
-            else
-                safe->showHint ("That doesn't look like a BitBuddy sound code (they start with BB1-). Check it was copied whole.");
-        }), true);
+            safe->codeDialog->exitModalState (0);
+            safe->codeDialog.reset();
+            safe->focusKeyboard();
+        });
+    };
+    host.addAndMakeVisible (*codeDialog);
+    codeDialog->setBounds (host.getLocalBounds());
+    codeDialog->enterModalState (false);   // the piano lets go of your keys while the box is open
+    codeDialog->focusTextBox();
 }
 
 void MainPanel::askToSavePreset()

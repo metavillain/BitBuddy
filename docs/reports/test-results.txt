@@ -1,6 +1,6 @@
-﻿
+
 === BitBuddy automated tests ===
-plugin: C:\Claude\BitBuddy\build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
+plugin: build/BitBuddy_artefacts/Release/VST3/BitBuddy.vst3
 
   PASS  Plugin name                                 BitBuddy
   PASS  Accepts MIDI (instrument)                   yes
@@ -93,14 +93,14 @@ plugin: C:\Claude\BitBuddy\build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
   PASS  Echo survives the silent gap after a note   gap -120 dB, echo -14.9 dB
   PASS  8-note chord at max volume stays below 0 dBFSpeak 0.9800
   PASS  Tweaked preset survives save + reload       2675 bytes; wave 0.333/0.333 attack 0.420/0.420 echo 0.330/0.330, program Hero Lead
-  PASS  CPU: 8-voice chords for 60 s                96x faster than real time (1.04% of one core)
-  PASS  CPU: idle (loaded, no notes) for 60 s       3177x faster than real time (0.031% of one core)
+  PASS  CPU: 8-voice chords for 60 s                97x faster than real time (1.03% of one core)
+  PASS  CPU: idle (loaded, no notes) for 60 s       3698x faster than real time (0.027% of one core)
 
   -- my presets, dice, mutate --
   PASS  MY PRESETS: save, reload (Key/Scale untouched), listedsaved, loaded, attack 0.50, echo 0.42, scale 5
   PASS  MY PRESETS: test preset removed again       C:\Users\enigmanaut\AppData\Roaming\BitBuddy\Presets
   PASS  DICE (shape): only the envelope changes, name gets *attack,decay,release,sustain | Hero Lead *
-  PASS  MUTATE: nudges many knobs a little, keeps wave/Key/Scale/volume16 params moved, biggest knob change 21% (3 mutates)
+  PASS  MUTATE: nudges many knobs a little, keeps wave/Key/Scale/volume18 params moved, biggest knob change 14% (3 mutates)
   PASS  MACRO ARP: 0 then +7 then loops (60 steps/s)57.0 64.0 57.0
   PASS  MACRO VOL: note cut to silence after 0.1 s (key still held)-14.4 dB -> -120.0 dB
   PASS  MACRO DUTY: 12.5% vs 50% pulse width        up 13% vs 50%
@@ -113,13 +113,13 @@ plugin: C:\Claude\BitBuddy\build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
   -- game sounds --
   PASS  SOUND FX: all 8 kinds sound right, play at once, then stopCOIN ok  JUMP ok  LASER ok  HIT ok  BOOM ok  POWER-UP ok  BLIP ok  BOMB ok  
   PASS  SOUND FX: tapping again makes a different oneLaser #10
-  PASS  SAVE WAV: the sound effect, starting at once, ending when it fades2.66 s, peak 0.35, start 0.348, end 0.00009
+  PASS  SAVE WAV: the sound effect, starting at once, ending when it fades0.50 s, peak 0.30, start 0.299, end 0.00000
   PASS  JINGLES: in your KEY + SCALE, right shape, all 4 play and endin key, shapes ok, 4/4 played
   PASS  NOTE PLAYER: stop / replace releases every note (none stuck)after stop -100.0 dB, after replace -100.0 dB
 
   -- sound codes --
   PASS  SOUND CODE: same sound on another BitBuddy (drawing + macros too), their Key/Scale/volume stay138 characters, knobs same, drawing + macros same, song kept, name "Hero Lead (code)"
-  PASS  SOUND CODE: a mistyped code is refused (the sound stays as it was)BB1-AQlIZXJvIExlYWQfjeMZ...
+  PASS  SOUND CODE: a mistyped code is refused (the sound stays as it was)BB1-AQlIZXJvIExlYWQfjeOe...
 
   -- your voice + hum --
   PASS  HUM: finds the pitch of a voice (98 Hz .. 784 Hz, within 15 cents)98->98.7 196->197.4 261.63->263.5 440->443.1 784->790.6 
