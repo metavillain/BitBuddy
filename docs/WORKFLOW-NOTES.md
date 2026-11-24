@@ -53,6 +53,7 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 42 | **User report: on an Android phone the UI is cut off - no scrolling, no resizing** | root cause: desktop window rules (minimum size, fixed shape) applied on a phone screen that is only ~411 pt tall | the most important bug of the release; found by the user, not by CI |
 | 43 | Phone layout: keyboard + help pinned, page scrolls by swipe; phones never get a forced window size | UI test at 914 × 411 + phone snapshots; 11/11 | a desktop test window's shape lock and an async re-fit both interfered with the test (§4) |
 | 44 | Release run retried: Android launch test hit a still-booting emulator; Windows MUTATE test failed once | launch test waits + retries (passes first try); MUTATE test now finds switches by type | two flaky tests, not app bugs: random + boot timing (§4) |
+| 45 | **v1.1.0 released** (tag moved to the green commit 223d199 - no release existed yet) + reinstalled on the PC | 4/4 platforms green, release page = latest, Windows zip / macOS zip / Android APK uploaded; installed copies hash-match the build | – |
 
 ---
 
