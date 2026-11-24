@@ -52,6 +52,7 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 41 | Release run for v1.1.0 | held back (correctly): Mac RECORD test dropped audio (writer buffer too small), Android app quit after 1.4 s | – |
 | 42 | **User report: on an Android phone the UI is cut off - no scrolling, no resizing** | root cause: desktop window rules (minimum size, fixed shape) applied on a phone screen that is only ~411 pt tall | the most important bug of the release; found by the user, not by CI |
 | 43 | Phone layout: keyboard + help pinned, page scrolls by swipe; phones never get a forced window size | UI test at 914 × 411 + phone snapshots; 11/11 | a desktop test window's shape lock and an async re-fit both interfered with the test (§4) |
+| 44 | Release run retried: Android launch test hit a still-booting emulator; Windows MUTATE test failed once | launch test waits + retries (passes first try); MUTATE test now finds switches by type | two flaky tests, not app bugs: random + boot timing (§4) |
 
 ---
 
@@ -215,6 +216,11 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
 - macOS AU testing in CI: copy the `.component` to `~/Library/Audio/Plug-Ins/Components`,
   `killall -9 AudioComponentRegistrar`, then `auval -v aumu <subtype> <manufacturer>`.
 - Share zips: `git archive HEAD -- . ':(exclude)demo/*.wav'` avoids duplicating big assets in the source copy.
+- **Random tests need limits that hold for every roll.** MUTATE checked knobs against a hand-kept list of
+  switches; two new switches (Filter, Console) were missing, so a rare double hop (2 × 33 %) failed CI. Derive
+  such lists from the code (here: every `AudioParameterChoice`) and run a random test several times locally.
+- **A freshly booted CI emulator can drop the first app launch** (still busy with BOOT_COMPLETED jobs).
+  Wait ~20 s, launch with `am start -W`, check `pidof`, retry up to 3 times.
 
 ---
 

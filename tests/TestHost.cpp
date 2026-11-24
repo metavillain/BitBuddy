@@ -821,7 +821,11 @@ static int runTests (const String& path)
         const auto m1 = snapshot();
         int moved = 0;
         float biggest = 0.0f;
-        const StringArray switches { "arpMode", "arpChord", "arpPattern", "arpSpeed", "echoTime", "voiceMode" };
+        // Switches (choice parameters) may hop a whole setting; only knobs are held to "a little"
+        StringArray switches;
+        for (auto* p : proc.getParameters())
+            if (auto* choice = dynamic_cast<AudioParameterChoice*> (p))
+                switches.add (choice->getParameterID());
         for (auto& [id, v] : m0)
             if (std::abs (m1.at (id) - v) > 1.0e-6f)
             {
