@@ -34,6 +34,9 @@ set(BITBUDDY_SOURCES
     src/PluginEditor.cpp
     src/Recorder.cpp
     src/SoundCode.cpp
+    src/VoiceSample.cpp
+    src/HumTracker.cpp
+    src/MicInput.cpp
     src/RetroLookAndFeel.cpp)
 
 # JUCE features BitBuddy never uses. Leaving them out keeps the binaries small.
@@ -76,10 +79,14 @@ juce_add_plugin(BitBuddy
     REQUIRES_FULL_SCREEN TRUE
     STATUS_BAR_HIDDEN TRUE
     FILE_SHARING_ENABLED TRUE   # recordings show up in the Files app
+    # REC VOICE + HUM (BitBuddy app): Mac, iPhone and iPad ask once before the microphone opens
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "BitBuddy listens only while you press REC VOICE or HUM."
     IPHONE_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
     IPAD_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight)
 
 target_sources(BitBuddy PRIVATE ${BITBUDDY_SOURCES})
+target_compile_definitions(BitBuddy PRIVATE BB_STANDALONE_HOLDER=1)   # the app can reach its own microphone
 target_compile_definitions(BitBuddy PUBLIC ${BITBUDDY_JUCE_OPTIONS} JUCE_VST3_CAN_REPLACE_VST2=0
     $<$<BOOL:${IOS}>:JUCE_CONTENT_SHARING=1>)   # SHARE button for recordings on iPhone / iPad
 

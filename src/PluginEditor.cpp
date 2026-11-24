@@ -10,7 +10,7 @@ namespace bb
 {
 namespace
 {
-const char* const kWaveShort[kNumWaves] = { "SQUARE", "PULSE 25", "PULSE 12", "TRIANGLE", "SAW", "NOISE", "METAL", "DRUMS", "DRAW" };
+const char* const kWaveShort[kNumWaves] = { "SQUARE", "PULSE 25", "PULSE 12", "TRIANGLE", "SAW", "NOISE", "METAL", "DRUMS", "DRAW", "VOICE" };
 
 const char* const kWaveInfo[kNumWaves] = {
     "SQUARE (50% pulse): bold, hollow and bright. The workhorse of 8-bit music - great for leads and bass.",
@@ -24,6 +24,8 @@ const char* const kWaveInfo[kNumWaves] = {
     "F# Hi-Hat,  G# Pedal Hat,  A# Open Hat,  B Crash",
     "DRAW: draw your own wave on the SCREEN, like the Game Boy's wave channel! Smooth shapes sound soft, "
     "jagged ones buzzy. Try SINE / SAW / RND, then draw over them.",
+    "VOICE: plays a recording like the NES sample channel - a sung 'aah' until you record your own in box 8 "
+    "(or load a WAV). Middle C = its own pitch. Try CHIP: NES for a crunchy 1-bit voice!",
 };
 
 const char* const kArpTips[3] = {
@@ -78,6 +80,11 @@ float iconSample (int wave, float x)
         {
             static const float steps[8] = { 0.2f, 0.9f, 0.6f, -0.2f, -0.9f, -0.5f, 0.4f, -0.1f };
             return steps[(int) (f * 8.0f) & 7];
+        }
+        case 9:   // a little burst of speech: wobbly, rising then fading
+        {
+            const float env = std::sin (juce::jlimit (0.0f, 1.0f, x * 0.5f) * juce::MathConstants<float>::pi);
+            return env * 0.9f * std::sin (x * 22.0f + 3.0f * std::sin (x * 5.0f)) * (0.6f + 0.4f * std::sin (x * 41.0f));
         }
         default: return 0.0f;
     }
@@ -433,16 +440,12 @@ void FilterBox::layoutContent (juce::Rectangle<int> area)
 
 //==============================================================================
 GameSoundsBox::GameSoundsBox (BitBuddyProcessor& p)
-    : Box ("game", "7", "GAME SOUNDS  (SOUND FX + JINGLES)", pal::yellow, 980, 96), proc (p)
+    : Box ("game", "7", "GAME SOUNDS  (SOUND FX + JINGLES)", pal::yellow, 600, 96), proc (p)
 {
-    for (auto* l : { &fxLabel, &jingleLabel })
-    {
-        l->setFont (pixelFont (8.0f));
-        l->setColour (juce::Label::textColourId, accent);
-        addAndMakeVisible (l);
-    }
-    fxLabel.setText ("NEW FX:", juce::dontSendNotification);
-    jingleLabel.setText ("JINGLES:", juce::dontSendNotification);
+    fxLabel.setFont (pixelFont (8.0f));
+    fxLabel.setColour (juce::Label::textColourId, accent);
+    fxLabel.setText ("NEW FX", juce::dontSendNotification);
+    addAndMakeVisible (fxLabel);
 
     for (int i = 0; i < kNumSfx; ++i)
     {
@@ -478,15 +481,15 @@ void GameSoundsBox::layoutContent (juce::Rectangle<int> area)
     area.removeFromTop (6);
     auto row2 = area.removeFromTop (26);
 
-    fxLabel.setBounds (row1.removeFromLeft (84));
+    fxLabel.setBounds (row1.removeFromLeft (64));
     const int fxWidth = row1.getWidth() / kNumSfx;
     for (auto* b : fxButtons)
         b->setBounds (row1.removeFromLeft (fxWidth).reduced (2, 0));
 
-    againButton.setBounds (row2.removeFromLeft (84).reduced (2, 0));
-    saveButton.setBounds (row2.removeFromLeft (110).reduced (2, 0));
-    row2.removeFromLeft (16);
-    jingleLabel.setBounds (row2.removeFromLeft (96));
+    // (the box title says JINGLES, so the jingle buttons get the whole rest of the row)
+    againButton.setBounds (row2.removeFromLeft (64).reduced (2, 0));
+    saveButton.setBounds (row2.removeFromLeft (92).reduced (2, 0));
+    row2.removeFromLeft (8);
     const int jWidth = row2.getWidth() / kNumJingles;
     for (auto* b : jingleButtons)
         b->setBounds (row2.removeFromLeft (jWidth).reduced (2, 0));
@@ -511,6 +514,282 @@ void GameSoundsBox::saveWav()
     file.revealToUser();
    #endif
 }
+
+//==============================================================================
+void VoiceView::refresh (const juce::String& status, float micLevel)
+{
+    if (voice.getVersion() != shownVersion || peaks.size() != (size_t) juce::jmax (1, getWidth()))
+    {
+        shownVersion = voice.getVersion();
+        peaks.assign ((size_t) juce::jmax (1, getWidth()), 0.0f);
+        const int length = voice.getLength();
+        for (int i = 0; i < length; ++i)
+        {
+            auto& p = peaks[(size_t) (i * (int) peaks.size() / juce::jmax (1, length))];
+            p = juce::jmax (p, std::abs (voice.at (i)));
+        }
+        repaint();
+    }
+    if (status != statusText || std::abs (micLevel - level) > 0.02f)
+    {
+        statusText = status;
+        level = micLevel;
+        repaint();
+    }
+}
+
+void VoiceView::paint (juce::Graphics& g)
+{
+    auto area = getLocalBounds().toFloat();
+    g.setColour (pal::screen);
+    g.fillRoundedRectangle (area, 3.0f);
+
+    const float mid = area.getCentreY(), half = area.getHeight() * 0.42f;
+    g.setColour (pal::cyan.withAlpha (statusText.isEmpty() ? 0.9f : 0.35f));
+    for (size_t x = 0; x < peaks.size(); x += 2)   // chunky 2-pixel columns
+        g.fillRect ((float) x, mid - peaks[x] * half, 2.0f, juce::jmax (1.0f, peaks[x] * half * 2.0f));
+
+    if (statusText.isNotEmpty())
+    {
+        if (level > 0.0f)   // microphone level bar along the bottom
+        {
+            g.setColour (level > 0.9f ? pal::red : pal::lime);
+            g.fillRect (area.withTop (area.getBottom() - 3.0f).withWidth (area.getWidth() * juce::jmin (1.0f, level * 1.5f)));
+        }
+        g.setColour (pal::white);
+        g.setFont (pixelFont (7.0f));
+        g.drawText (statusText, area.reduced (4.0f, 0.0f), juce::Justification::centred);
+    }
+}
+
+//==============================================================================
+VoiceBox::VoiceBox (BitBuddyProcessor& p)
+    : Box ("voice", "8", "YOUR VOICE  (VOICE WAVE + HUM)", pal::cyan, 370, 96), proc (p), view (p.getVoiceSample())
+{
+    recButton.setTooltip ("REC VOICE: say or sing something short (up to 3 seconds) - BitBuddy turns it into the VOICE wave. "
+                          "Then play it on the keys: middle C = your own pitch. Try CHIP: NES for a crunchy 1-bit voice!");
+    recButton.setColour (juce::TextButton::buttonColourId, pal::red);
+    recButton.onClick = [this] { toggleRecording(); };
+
+    loadButton.setTooltip ("LOAD WAV: use the start of any WAV file (up to 3 seconds of sound) as the VOICE wave.");
+    loadButton.onClick = [this] { loadWav(); };
+
+    aahButton.setTooltip ("AAH: back to BitBuddy's own sung 'aah'.");
+    aahButton.onClick = [this]
+    {
+        proc.resetVoice();
+        useVoice();
+        say ("VOICE: back to the sung 'aah'.");
+    };
+
+    humButton.setTooltip ("HUM: hum or sing a tune into the microphone and BitBuddy plays it with your sound! "
+                          "(SCALE LOCK keeps every note in key. Use headphones so BitBuddy doesn't hear itself.)");
+    humButton.setColour (juce::TextButton::buttonColourId, pal::purple);
+    humButton.setClickingTogglesState (false);
+    humButton.onClick = [this] { toggleHum(); };
+
+    view.setTooltip ("Your voice recording (the VOICE wave plays this).");
+
+    appOnly.setFont (textFont (12.0f, true));
+    appOnly.setColour (juce::Label::textColourId, pal::light);
+    appOnly.setText ("REC VOICE + HUM: in the BitBuddy app", juce::dontSendNotification);
+
+    const bool hasMic = MicInput::isAvailable();
+    for (auto* c : { (juce::Component*) &loadButton, (juce::Component*) &aahButton, (juce::Component*) &view })
+        addAndMakeVisible (c);
+    if (hasMic)
+    {
+        addAndMakeVisible (recButton);
+        addAndMakeVisible (humButton);
+    }
+    else
+    {
+        addAndMakeVisible (appOnly);
+    }
+    startTimerHz (15);
+}
+
+VoiceBox::~VoiceBox()
+{
+    stopMic();
+}
+
+void VoiceBox::layoutContent (juce::Rectangle<int> area)
+{
+    area = area.reduced (2, 4);
+    auto row1 = area.removeFromTop (26);
+    area.removeFromTop (6);
+    view.setBounds (area.removeFromTop (26));
+
+    if (MicInput::isAvailable())
+    {
+        recButton.setBounds (row1.removeFromLeft (104).reduced (2, 0));
+        loadButton.setBounds (row1.removeFromLeft (92).reduced (2, 0));
+        aahButton.setBounds (row1.removeFromLeft (56).reduced (2, 0));
+        humButton.setBounds (row1.reduced (2, 0));
+    }
+    else
+    {
+        loadButton.setBounds (row1.removeFromLeft (92).reduced (2, 0));
+        aahButton.setBounds (row1.removeFromLeft (56).reduced (2, 0));
+        appOnly.setBounds (row1.reduced (4, 0));
+    }
+}
+
+void VoiceBox::timerCallback()
+{
+    juce::String status;
+    if (micUse == MicUse::Record)
+    {
+        const double seconds = captured.load() / juce::jmax (1.0, mic.getSampleRate());
+        status = "RECORDING " + juce::String (juce::jmax (0.0, 3.0 - seconds), 1) + " s";
+        if (seconds >= 3.0)
+            finishRecording();
+    }
+    else if (micUse == MicUse::Hum)
+    {
+        const float hz = proc.humTracker.getLastPitch();
+        status = hz > 0.0f ? "HUM: " + juce::MidiMessage::getMidiNoteName (juce::roundToInt (69.0 + 12.0 * std::log2 (hz / 440.0)), true, true, 4)
+                           : juce::String ("HUM: sing!");
+    }
+    view.refresh (status, micUse != MicUse::None ? mic.getLevel() : 0.0f);
+}
+
+void VoiceBox::stopMic()
+{
+    mic.stop();
+    if (micUse == MicUse::Hum)
+        proc.humTracker.reset();   // (the microphone thread has stopped: safe to end the note here)
+    micUse = MicUse::None;
+    recButton.setButtonText ("REC VOICE");
+    humButton.setToggleState (false, juce::dontSendNotification);
+    humButton.setButtonText ("HUM");
+}
+
+void VoiceBox::toggleRecording()
+{
+    if (micUse == MicUse::Record)
+    {
+        finishRecording();
+        return;
+    }
+    stopMic();
+
+    capture.assign ((size_t) (96000.0 * 3.2), 0.0f);   // enough for 3 s at up to 96 kHz
+    captured = 0;
+    micUse = MicUse::Record;
+    recButton.setButtonText ("STOP");
+    mic.start ([this] (const float* x, int n, double)
+               {
+                   const int w = captured.load (std::memory_order_relaxed);
+                   const int k = juce::jmin (n, (int) capture.size() - w);
+                   if (k > 0)
+                   {
+                       std::copy (x, x + k, capture.begin() + w);
+                       captured.store (w + k, std::memory_order_release);
+                   }
+               },
+               [safe = juce::Component::SafePointer<VoiceBox> (this)] (bool ok, const juce::String& problem)
+               {
+                   if (safe == nullptr)
+                       return;
+                   if (ok)
+                       safe->say ("Recording! Say or sing something (up to 3 seconds)... press STOP when you're done.");
+                   else
+                   {
+                       safe->micUse = MicUse::None;
+                       safe->recButton.setButtonText ("REC VOICE");
+                       safe->say (problem);
+                   }
+               });
+}
+
+void VoiceBox::finishRecording()
+{
+    const double rate = mic.getSampleRate();
+    stopMic();   // (after this the microphone thread has let go of `capture`)
+    juce::AudioBuffer<float> audio (1, juce::jmax (1, captured.load()));
+    audio.copyFrom (0, 0, capture.data(), audio.getNumSamples());
+    capture = {};
+    if (proc.setVoiceRecording (audio, rate))
+    {
+        useVoice();
+        say ("Got it! That's your VOICE wave now - play it on the keys (middle C = your own pitch). Try CHIP: NES!");
+    }
+    else
+    {
+        say ("BitBuddy didn't hear anything. Is your microphone on (and allowed in your settings)?");
+    }
+}
+
+void VoiceBox::toggleHum()
+{
+    if (micUse == MicUse::Hum)
+    {
+        stopMic();
+        say ("HUM is off.");
+        return;
+    }
+    stopMic();
+    micUse = MicUse::Hum;
+    humButton.setToggleState (true, juce::dontSendNotification);
+    humButton.setButtonText ("HUM ON");
+    auto& tracker = proc.humTracker;
+    mic.start ([&tracker] (const float* x, int n, double rate) { tracker.process (x, n, rate); },
+               [safe = juce::Component::SafePointer<VoiceBox> (this)] (bool ok, const juce::String& problem)
+               {
+                   if (safe == nullptr)
+                       return;
+                   if (ok)
+                       safe->say ("HUM: hum or sing a tune - BitBuddy plays it! (Headphones help: then it doesn't hear itself.)");
+                   else
+                   {
+                       safe->stopMic();
+                       safe->say (problem);
+                   }
+               });
+}
+
+void VoiceBox::loadWav()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Pick a sound for the VOICE wave", juce::File(), "*.wav;*.aif;*.aiff");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [safe = juce::Component::SafePointer<VoiceBox> (this)] (const juce::FileChooser& fc)
+    {
+        if (safe == nullptr || fc.getURLResults().isEmpty())
+            return;
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        auto stream = fc.getURLResult().createInputStream (juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress));
+        std::unique_ptr<juce::AudioFormatReader> reader (stream != nullptr ? formats.createReaderFor (std::move (stream)) : nullptr);
+        if (reader == nullptr)
+        {
+            safe->say ("BitBuddy couldn't read that file. Try a WAV or AIFF.");
+            return;
+        }
+        const int length = (int) juce::jmin<juce::int64> (reader->lengthInSamples, (juce::int64) (reader->sampleRate * 20.0));
+        juce::AudioBuffer<float> audio ((int) juce::jmin (2u, reader->numChannels), juce::jmax (1, length));
+        reader->read (&audio, 0, audio.getNumSamples(), 0, true, audio.getNumChannels() > 1);
+        if (safe->proc.setVoiceRecording (audio, reader->sampleRate))
+        {
+            safe->useVoice();
+            safe->say ("Loaded \"" + fc.getURLResult().getFileName() + "\" as your VOICE wave!");
+        }
+        else
+        {
+            safe->say ("That file seems to be silent.");
+        }
+    });
+}
+
+void VoiceBox::useVoice()
+{
+    if (auto* wave = proc.apvts.getParameter (ids::wave))
+        wave->setValueNotifyingHost (wave->convertTo0to1 ((float) Wave::Voice));
+    const double seconds = proc.getVoiceSample().getLength() / VoiceSample::rate;
+    proc.notePlayer.play ({ { 0.0, seconds + 0.05, VoiceSample::rootNote, 0.9f } });
+}
+
 
 //==============================================================================
 WaveButton::WaveButton (int index, const juce::String& shortName, juce::Colour c)
@@ -1479,6 +1758,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
       volume       (state, ids::volume,       "VOLUME",  pal::sky, "VOLUME: the overall loudness of BitBuddy."),
       filterBox (p.apvts),
       gameBox (p),
+      voiceBox (p),
       keyboard (p.keyboardState)
 {
     // --- header ---
@@ -1818,7 +2098,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     filterBox.setDice   ([this] { proc.rollSection (Section::Filter); });
 
     // Boxes can be hidden (their "x") and moved (drag the title bar)
-    allBoxes = { &soundBox, &screenBox, &shapeBox, &chordsBox, &movementBox, &crunchBox, &filterBox, &playBox, &gameBox };
+    allBoxes = { &soundBox, &screenBox, &shapeBox, &chordsBox, &movementBox, &crunchBox, &filterBox, &playBox, &gameBox, &voiceBox };
     for (auto* box : allBoxes)
     {
         box->onHide = [this] (Box& b) { setBoxVisible (b.getId(), false); };
@@ -1849,7 +2129,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     diceShown = loadSetting ("showDice", "1") != "0";   // VIEW > Show dice buttons
     for (auto* box : allBoxes)
         box->setDiceShown (diceShown);
-    gameBox.onMessage = [this] (const juce::String& text) { hintLabel.setText (text, juce::dontSendNotification); };
+    gameBox.onMessage = voiceBox.onMessage = [this] (const juce::String& text) { showHint (text); };
 
     // --- bottom ---
     hintLabel.setFont (textFont (15.0f));
@@ -2040,7 +2320,7 @@ namespace
 {
 juce::StringArray defaultBoxOrder()
 {
-    return { "sound", "screen", "shape", "chords", "movement", "crunch", "filter", "play", "game" };
+    return { "sound", "screen", "shape", "chords", "movement", "crunch", "filter", "play", "game", "voice" };
 }
 } // namespace
 

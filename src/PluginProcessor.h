@@ -10,6 +10,8 @@
 #include "Effects.h"
 #include "JamBand.h"
 #include "NotePlayer.h"
+#include "VoiceSample.h"
+#include "HumTracker.h"
 #include "Recorder.h"
 
 // Lock-free ring buffer so the UI "screen" can show the live waveform.
@@ -163,6 +165,14 @@ public:
     void playJingle (int type);
 
     //==========================================================================
+    // YOUR VOICE (added in 1.2): the recording the VOICE wave plays
+    /** Turns a recording into the voice (see bb::makeVoiceSample). False if it was silent. */
+    bool setVoiceRecording (const juce::AudioBuffer<float>& audio, double sampleRate);
+    void setVoiceSample (const std::vector<std::int8_t>&);
+    void resetVoice()                                   { setVoiceSample (bb::defaultVoiceSample()); }
+    const bb::VoiceSample& getVoiceSample() const noexcept { return voiceSample; }
+
+    //==========================================================================
     // SOUND CODES (added in 1.2): a whole sound as a line of text to send to a friend
     juce::String getSoundCode();
     /** Finds a sound code anywhere in the text and loads it. Returns false (and
@@ -171,6 +181,8 @@ public:
 
     /** Plays scheduled notes: sound effects, jingles (and in the app, MIDI songs). */
     bb::NotePlayer notePlayer;
+    /** HUM (BitBuddy app): notes sung into the microphone. */
+    bb::HumTracker humTracker;
 
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;   // on-screen keyboard -> synth
@@ -205,6 +217,7 @@ private:
     void setParamValue (const char* id, float realValue);
 
     std::array<std::atomic<std::uint8_t>, bb::kCustomWaveSteps> customWave {};   // UI writes, audio reads
+    bb::VoiceSample voiceSample;                                                  // UI writes, audio reads
 
     struct MacroStore
     {

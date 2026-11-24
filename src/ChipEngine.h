@@ -19,8 +19,10 @@
 // =============================================================================
 namespace bb
 {
-enum class Wave : int { Square = 0, Pulse25, Pulse12, Triangle, Saw, Noise, Metal, Drums, Custom };
-constexpr int kNumWaves = 9;
+enum class Wave : int { Square = 0, Pulse25, Pulse12, Triangle, Saw, Noise, Metal, Drums, Custom, Voice };
+constexpr int kNumWaves = 10;
+
+struct VoiceSample;   // VOICE: your recording (VoiceSample.h)
 
 // "Draw your own wave": one cycle as 32 steps of 0..15, exactly like the
 // Game Boy's wave channel (its 32-sample, 4-bit "wave RAM").
@@ -97,6 +99,7 @@ struct EngineParams
     bool smartChords = false;                                  // CHORD mode picks the chord from the scale
 
     CustomWave customWave = defaultCustomWave();               // for Wave::Custom
+    const VoiceSample* voice = nullptr;                        // for Wave::Voice
     Console console = Console::Modern;
     std::array<Macro, kNumMacroLanes> macros {};
 
@@ -188,6 +191,8 @@ private:
 
         float gate = 0.0f;   // NES triangle: no volume control, just on / off (smoothed against clicks)
         float panL = 1.0f, panR = 1.0f;   // STEREO Wide: this note's side
+        int voiceIndex = -1;              // VOICE: the recording's sample now playing...
+        float voiceOut = 0.0f, dpcm = 0.0f;   // ...as the console plays it (NES: 1-bit delta steps)
 
         // instrument macros
         int macroFrame = 0;
@@ -207,6 +212,8 @@ private:
     float renderDrum (Voice&) noexcept;
     void updateModulation (Voice&) noexcept;
     float oscillate (Voice&) noexcept;
+    float playVoice (Voice&) noexcept;
+    static void restartVoiceSample (Voice& v) noexcept { v.phase = 0.0; v.voiceIndex = -1; v.dpcm = 0.0f; }
     float noiseStep (Voice&, double clockHz, bool shortMode) noexcept;
 
     void startVoice (Voice&, int note, float velocity);

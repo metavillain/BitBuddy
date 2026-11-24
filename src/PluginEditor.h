@@ -5,6 +5,7 @@
 
 #include "PluginProcessor.h"
 #include "RetroLookAndFeel.h"
+#include "MicInput.h"
 
 namespace bb
 {
@@ -174,10 +175,58 @@ private:
     void saveWav();
 
     BitBuddyProcessor& proc;
-    juce::Label fxLabel, jingleLabel;
+    juce::Label fxLabel;
     juce::OwnedArray<juce::TextButton> fxButtons, jingleButtons;
     juce::TextButton againButton { "AGAIN" }, saveButton { "SAVE WAV" };
     juce::ScopedMessageBox shareBox;
+};
+
+/** A little picture of the voice recording (and the microphone level while recording). */
+class VoiceView : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit VoiceView (const VoiceSample& sample) : voice (sample) {}
+    void refresh (const juce::String& status, float micLevel);
+    void paint (juce::Graphics&) override;
+
+private:
+    const VoiceSample& voice;
+    std::vector<float> peaks;   // one per pixel column
+    int shownVersion = -1;
+    juce::String statusText;
+    float level = 0.0f;
+};
+
+/** 8. YOUR VOICE (added in 1.2): record or load a voice for the VOICE wave, and
+    HUM to play (the microphone parts work in the BitBuddy app). */
+class VoiceBox : public Box, private juce::Timer
+{
+public:
+    explicit VoiceBox (BitBuddyProcessor&);
+    ~VoiceBox() override;
+    std::function<void (const juce::String&)> onMessage;   // shows a line in the help bar
+
+private:
+    void layoutContent (juce::Rectangle<int>) override;
+    void timerCallback() override;
+    void toggleRecording();
+    void finishRecording();
+    void toggleHum();
+    void stopMic();
+    void loadWav();
+    void useVoice();   // picks the VOICE wave and plays the recording once
+    void say (const juce::String& text) { if (onMessage != nullptr) onMessage (text); }
+
+    BitBuddyProcessor& proc;
+    MicInput mic;
+    enum class MicUse { None, Record, Hum };
+    MicUse micUse = MicUse::None;
+    std::vector<float> capture;          // REC VOICE: filled by the microphone thread...
+    std::atomic<int> captured { 0 };     // ...this far
+    juce::TextButton recButton { "REC VOICE" }, loadButton { "LOAD WAV" }, aahButton { "AAH" }, humButton { "HUM" };
+    juce::Label appOnly;
+    VoiceView view;
+    std::unique_ptr<juce::FileChooser> chooser;
 };
 
 /** Retro green "screen" that shows the live waveform. */
@@ -481,6 +530,7 @@ private:
     // 6. C64 filter
     FilterBox filterBox;
     GameSoundsBox gameBox;
+    VoiceBox voiceBox;
 
     // play along: Scale Lock
     juce::ComboBox keyBox, scaleBox;

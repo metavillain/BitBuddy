@@ -1,4 +1,5 @@
 #include "ChipEngine.h"
+#include "VoiceSample.h"
 
 #include <algorithm>
 #include <cmath>
@@ -414,7 +415,7 @@ int ChipEngine::getVoiceLimit() const noexcept
 // flat or sharp - part of its sound.
 float ChipEngine::chipFrequency (Console console, Wave wave, float hz) noexcept
 {
-    if (hz <= 0.0f)
+    if (hz <= 0.0f || wave == Wave::Voice)   // (a recording's speed isn't a pitch register)
         return hz;
 
     switch (console)
@@ -689,6 +690,8 @@ void ChipEngine::startVoice (Voice& v, int note, float velocity)
     v.lfoPhase = 0.25;
     v.pwmPhase = 0.0;
     v.stage = Stage::Attack;
+    if (p.wave == Wave::Voice)
+        restartVoiceSample (v);
 
     v.arpCounter = 0.0;
     v.arpDir = 1;
@@ -714,6 +717,8 @@ void ChipEngine::retrigger (Voice& v, int note)
     v.ctrlCountdown = 0;
     v.lfoPhase = 0.25;
     v.stage = Stage::Attack;   // restart from the current level -> no click
+    if (p.wave == Wave::Voice)
+        restartVoiceSample (v);
     v.held = true;
     restartMacros (v);
     lastNote = note;
@@ -1099,6 +1104,9 @@ float ChipEngine::oscillate (Voice& v) noexcept
             out = (float) p.customWave[(size_t) ((int) (v.phase * kCustomWaveSteps) & (kCustomWaveSteps - 1))] / 7.5f - 1.0f;
             break;
 
+        case Wave::Voice:
+            return playVoice (v);   // (moves through the recording itself, no looping phase)
+
         case Wave::Drums: break;
     }
 
@@ -1107,6 +1115,47 @@ float ChipEngine::oscillate (Voice& v) noexcept
         v.phase -= 1.0;
 
     return out;
+}
+
+float ChipEngine::playVoice (Voice& v) noexcept
+{
+    const int length = p.voice != nullptr ? p.voice->getLength() : 0;
+    const int index = (int) v.phase;   // VOICE: phase counts samples of the recording
+    if (index >= length)
+    {
+        // The recording is over, so the note is too (a quick fade, no click)
+        if (v.stage != Stage::Release)
+        {
+            v.stage = Stage::Release;
+            v.env = std::min (v.env, 0.02f);
+        }
+        return v.voiceOut;
+    }
+
+    if (index != v.voiceIndex)
+    {
+        v.voiceIndex = index;
+        const float x = p.voice->at (index);
+        switch (p.console)
+        {
+            case Console::NES:       // DPCM: a 1-bit delta - each sample the level can only step up or down
+                v.dpcm = std::clamp (v.dpcm + (x > v.dpcm ? 1.0f / 32.0f : -1.0f / 32.0f), -1.0f, 1.0f);
+                v.voiceOut = v.dpcm;
+                break;
+            case Console::GameBoy:   // 4-bit samples (the wave channel / the C64 volume trick)
+            case Console::C64:
+                v.voiceOut = std::round ((x + 1.0f) * 7.5f) / 7.5f - 1.0f;
+                break;
+            case Console::Modern:
+                v.voiceOut = x;
+                break;
+        }
+    }
+
+    // Middle C plays the recording at its own speed; other keys faster or slower
+    constexpr double middleC = 261.6255653;
+    v.phase += (double) v.hz / middleC * (VoiceSample::rate * invSr);
+    return v.voiceOut;
 }
 
 // NES-style noise: a 15-bit linear-feedback shift register.

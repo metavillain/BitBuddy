@@ -14,6 +14,7 @@
 #include "../src/PluginEditor.h"
 #include "../src/Presets.h"
 #include "../src/GameSounds.h"
+#include <set>
 
 #include <chrono>
 #include <functional>
@@ -286,6 +287,7 @@ static double pitchAt (const AudioBuffer<float>& b, double fromSec, int length, 
     return detectPitch (b.getReadPointer (0) + s0, length, sr, minHz);
 }
 
+constexpr float kLastWave = (float) (bb::kNumWaves - 1);   // wave index -> 0..1: index / kLastWave
 static double midiToHz (double note) { return 440.0 * std::pow (2.0, (note - 69.0) / 12.0); }
 static double centsOff (double measured, double expected) { return 1200.0 * std::log2 (measured / expected); }
 
@@ -318,7 +320,7 @@ static int runTests (const String& path)
     int automatable = 0;
     for (auto* prm : plugin->getParameters())
         automatable += prm->isAutomatable() ? 1 : 0;
-    const int ownParams = BitBuddyProcessor().getParameters().size();   // every knob + switch BitBuddy has
+    const int ownParams = std::make_unique<BitBuddyProcessor>()->getParameters().size();   // every knob + switch BitBuddy has
     res.check (automatable == ownParams + 2, "Automatable parameters in the DAW",   // + the VST3 bypass and program switches
                String (automatable) + " of " + String (ownParams) + " (+" + String (plugin->getParameters().size() - automatable) + " hidden MIDI-CC slots)");
     res.check (plugin->getNumPrograms() == (int) bb::factoryPresets().size() && plugin->getNumPrograms() >= 31, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
@@ -356,9 +358,9 @@ static int runTests (const String& path)
     struct PitchCase { const char* wave; float waveNorm; int note; };
     const PitchCase pitchCases[] = {
         // Wave has 9 choices (0..8): normalised value = index / 8
-        { "Square",      0.0f / 8.0f, 69 }, { "Pulse 25%", 1.0f / 8.0f, 57 }, { "Pulse 12.5%", 2.0f / 8.0f, 72 },
-        { "Triangle",    3.0f / 8.0f, 45 }, { "Saw",       4.0f / 8.0f, 64 }, { "Metal Noise", 6.0f / 8.0f, 69 },
-        { "Draw (sine)", 8.0f / 8.0f, 69 },
+        { "Square",      0.0f / kLastWave, 69 }, { "Pulse 25%", 1.0f / kLastWave, 57 }, { "Pulse 12.5%", 2.0f / kLastWave, 72 },
+        { "Triangle",    3.0f / kLastWave, 45 }, { "Saw",       4.0f / kLastWave, 64 }, { "Metal Noise", 6.0f / kLastWave, 69 },
+        { "Draw (sine)", 8.0f / kLastWave, 69 },
     };
     for (const auto& pc : pitchCases)
     {
@@ -558,7 +560,7 @@ static int runTests (const String& path)
         auto holdRatio = [&] (int console)
         {
             selectProgram (*plugin, "Classic Square");
-            setParam (*plugin, "Wave", 3.0f / 8.0f);
+            setParam (*plugin, "Wave", 3.0f / kLastWave);
             setParam (*plugin, "Console", (float) console / 3.0f);
             setParam (*plugin, "Decay", 0.3f);       // ~0.1 s decay (normalised value)...
             setParam (*plugin, "Sustain", 0.1f);     // ...down to a quiet sustain
@@ -829,7 +831,7 @@ static int runTests (const String& path)
 
         selectProgram (*plugin, "Hero Lead");
         pump();
-        setParam (*plugin, "Wave", 3.0f / 8.0f);
+        setParam (*plugin, "Wave", 3.0f / kLastWave);
         setParam (*plugin, "Attack", 0.42f);
         setParam (*plugin, "Echo", 0.33f);
         pump();
@@ -880,7 +882,8 @@ static int runTests (const String& path)
     // ---- 11. My Presets, dice, MUTATE (BitBuddy's own processor, as the UI uses it) ----
     std::cout << "\n  -- my presets, dice, mutate --\n";
     {
-        BitBuddyProcessor proc;
+        auto procPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
+        auto& proc = *procPtr;
         auto get = [&] (const char* id) { auto* p = proc.apvts.getParameter (id); return p->convertFrom0to1 (p->getValue()); };
         auto set = [&] (const char* id, float v) { auto* p = proc.apvts.getParameter (id); p->setValueNotifyingHost (p->convertTo0to1 (v)); };
         auto snapshot = [&]
@@ -1177,7 +1180,8 @@ static int runTests (const String& path)
     // ---- 12. 1.2: game sounds (sound FX, SAVE WAV, jingles, note player) -----------
     std::cout << "\n  -- game sounds --\n";
     {
-        BitBuddyProcessor proc;
+        auto procPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
+        auto& proc = *procPtr;
         auto get = [&] (const char* id) { auto* p = proc.apvts.getParameter (id); return p->convertFrom0to1 (p->getValue()); };
 
         // Runs BitBuddy's own processor (whatever its note player plays), optionally calling `during` at a time
@@ -1296,7 +1300,9 @@ static int runTests (const String& path)
     // ---- 13. 1.2: sound codes ---------------------------------------------------
     std::cout << "\n  -- sound codes --\n";
     {
-        BitBuddyProcessor mine, friends;
+        auto minePtr = std::make_unique<BitBuddyProcessor>(), friendsPtr = std::make_unique<BitBuddyProcessor>();
+        auto& mine = *minePtr;
+        auto& friends = *friendsPtr;
         auto setOn = [] (BitBuddyProcessor& p, const char* id, float v) { auto* prm = p.apvts.getParameter (id); prm->setValueNotifyingHost (prm->convertTo0to1 (v)); };
         auto soundOf = [] (BitBuddyProcessor& p)
         {
@@ -1355,11 +1361,153 @@ static int runTests (const String& path)
         auto typo = code;
         const int at = code.length() / 2;
         typo = typo.replaceSection (at, 1, typo[at] == 'A' ? "B" : "A");
-        BitBuddyProcessor fresh;
+        auto freshPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
+        auto& fresh = *freshPtr;
         const auto before = soundOf (fresh);
         const bool refused = ! fresh.loadSoundCode (typo) && ! fresh.loadSoundCode ("BB1-hello") && ! fresh.loadSoundCode ("no code here")
                           && soundOf (fresh) == before;
         res.check (refused, "SOUND CODE: a mistyped code is refused (the sound stays as it was)", typo.substring (0, 24) + "...");
+    }
+
+    // ---- 14. 1.2: your voice (VOICE wave) + HUM ----------------------------------
+    std::cout << "\n  -- your voice + hum --\n";
+    {
+        // A pretend voice: a buzzy tone with harmonics, a little vibrato and breath noise
+        auto sing = [] (std::initializer_list<std::pair<double, double>> notes /* hz (0 = quiet), seconds */, double rate)
+        {
+            double total = 0.0;
+            for (auto& n : notes) total += n.second;
+            AudioBuffer<float> b (1, (int) (total * rate));
+            b.clear();
+            Random noise (7);
+            double phase = 0.0, t = 0.0;
+            int pos = 0;
+            for (auto& [hz, seconds] : notes)
+                for (int i = 0; i < (int) (seconds * rate); ++i, ++pos, t += 1.0 / rate)
+                {
+                    if (hz <= 0.0) { b.setSample (0, pos, 0.002f * (noise.nextFloat() - 0.5f)); continue; }
+                    phase += hz * (1.0 + 0.008 * std::sin (2.0 * MathConstants<double>::pi * 5.0 * t)) / rate;
+                    float x = 0.0f;
+                    for (int h = 1; h <= 6; ++h)
+                        x += (float) (std::sin (2.0 * MathConstants<double>::pi * h * phase) / h);
+                    b.setSample (0, pos, 0.25f * x + 0.01f * (noise.nextFloat() - 0.5f));
+                }
+            return b;
+        };
+
+        // HUM: the pitch finder is accurate across a voice's range...
+        bool accurate = true;
+        String pitchDetail;
+        for (double hz : { 98.0, 196.0, 261.63, 440.0, 784.0 })
+        {
+            const auto b = sing ({ { hz, 0.1 } }, 11025.0);
+            const float found = bb::HumTracker::detectPitch (b.getReadPointer (0) + 200, 512, 11025.0);
+            accurate = accurate && found > 0.0f && std::abs (centsOff (found, hz)) < 15.0;
+            pitchDetail << String (hz, 0) << "->" << String (found, 1) << " ";
+        }
+        res.check (accurate, "HUM: finds the pitch of a voice (98 Hz .. 784 Hz, within 15 cents)", pitchDetail);
+
+        // ...and a sung A3, E4, then quiet becomes exactly: A3 on, A3 off + E4 on, E4 off
+        bb::HumTracker tracker;
+        const auto song = sing ({ { 220.0, 0.6 }, { 329.63, 0.6 }, { 0.0, 0.4 } }, 48000.0);
+        std::vector<std::tuple<int, bool, double>> heard;
+        for (int pos = 0; pos < song.getNumSamples(); pos += 480)
+        {
+            tracker.process (song.getReadPointer (0) + pos, jmin (480, song.getNumSamples() - pos), 48000.0);
+            tracker.popEvents ([&] (int note, bool on, float) { heard.emplace_back (note, on, pos / 48000.0); });
+        }
+        String humDetail;
+        for (auto& [note, on, at] : heard)
+            humDetail << (on ? "+" : "-") << MidiMessage::getMidiNoteName (note, true, true, 4) << "@" << String (at, 2) << " ";
+        const bool humOk = heard.size() == 4 && std::get<0> (heard[0]) == 57 && std::get<1> (heard[0]) && std::get<2> (heard[0]) < 0.1
+                        && std::get<0> (heard[1]) == 57 && ! std::get<1> (heard[1])
+                        && std::get<0> (heard[2]) == 64 && std::get<1> (heard[2]) && std::abs (std::get<2> (heard[2]) - 0.6) < 0.1
+                        && std::get<0> (heard[3]) == 64 && ! std::get<1> (heard[3]);
+        res.check (humOk, "HUM: a sung A3 then E4 becomes notes A3, E4 (quick, steady, and they end)", humDetail);
+
+        // VOICE: a recording is trimmed, evened out, and plays at its own pitch on middle C
+        auto procPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
+        auto& proc = *procPtr;
+        const auto recording = sing ({ { 0.0, 0.5 }, { 440.0, 1.0 }, { 0.0, 0.5 } }, 48000.0);
+        const bool made = proc.setVoiceRecording (recording, 48000.0);
+        const double voiceSeconds = proc.getVoiceSample().getLength() / bb::VoiceSample::rate;
+        auto* wave = proc.apvts.getParameter ("wave");
+        proc.selectPreset (0);
+        wave->setValueNotifyingHost (wave->convertTo0to1 ((float) bb::Wave::Voice));
+        proc.apvts.getParameter ("sustain")->setValueNotifyingHost (1.0f);
+        auto play = [&] (int note, double holdSec, double seconds)
+        {
+            proc.prepareToPlay (sr, 512);
+            proc.notePlayer.play ({ { 0.0, holdSec, note, 0.9f } });
+            AudioBuffer<float> result (2, (int) (seconds * sr)), blk (2, 512);
+            result.clear();
+            for (int pos = 0; pos + 512 <= result.getNumSamples(); pos += 512)
+            {
+                MidiBuffer midi;
+                blk.clear();
+                proc.processBlock (blk, midi);
+                result.copyFrom (0, pos, blk, 0, 0, 512);
+            }
+            return result;
+        };
+        const auto atC = play (60, 3.0, 3.0), atC5 = play (72, 3.0, 3.0);
+        const double ownPitch = pitchAt (atC, 0.3, 4096, sr), octaveUp = pitchAt (atC5, 0.1, 4096, sr);
+        const float during = peakOf (atC, 0.2, 0.8, sr), after = peakOf (atC, 1.5, 3.0, sr);
+        res.check (made && voiceSeconds > 0.95 && voiceSeconds < 1.2 && std::abs (centsOff (ownPitch, 440.0)) < 15.0
+                       && std::abs (centsOff (octaveUp, 880.0)) < 15.0 && during > 0.1f && after < 1.0e-4f,
+                   "VOICE: trimmed to the sound, own pitch on middle C, octave up on C5, ends with the recording",
+                   String (voiceSeconds, 2) + " s, C4 " + String (ownPitch, 1) + " Hz, C5 " + String (octaveUp, 1)
+                       + " Hz, after the end " + String (Decibels::gainToDecibels (after), 1) + " dB (key still held)");
+
+        // Consoles: Game Boy = 4-bit (16 levels), NES = 1-bit delta steps (so it sounds different again)
+        auto engineVoice = [&] (bb::Console console)
+        {
+            bb::ChipEngine e;
+            e.prepare (sr);
+            bb::EngineParams ep;
+            ep.wave = bb::Wave::Voice;
+            ep.voice = &proc.getVoiceSample();
+            ep.console = console;
+            ep.attack = 0.001f;
+            ep.sustain = 1.0f;
+            e.setParams (ep);
+            std::vector<float> out (8192, 0.0f);
+            e.noteOn (60, 1.0f);
+            e.render (out.data(), (int) out.size());
+            return std::vector<float> (out.begin() + 2000, out.end());   // after the attack
+        };
+        const auto modern = engineVoice (bb::Console::Modern), gameBoy = engineVoice (bb::Console::GameBoy), nes = engineVoice (bb::Console::NES);
+        std::set<int> gbLevels, modernLevels;
+        for (auto x : gameBoy) gbLevels.insert (roundToInt (x * 10000.0f));
+        for (auto x : modern)  modernLevels.insert (roundToInt (x * 10000.0f));
+        double nesDiff = 0.0;
+        for (size_t i = 0; i < nes.size(); ++i)
+            nesDiff += std::abs (nes[i] - modern[i]);
+        res.check (gbLevels.size() <= 16 && modernLevels.size() > 40 && nesDiff / (double) nes.size() > 0.01,
+                   "VOICE + CHIP: Game Boy plays it in 16 levels, NES as 1-bit delta steps",
+                   String ((int) gbLevels.size()) + " GB levels (Modern " + String ((int) modernLevels.size()) + "), NES differs by "
+                       + String (nesDiff / (double) nes.size(), 3));
+
+        // The voice is kept with your project; factory presets leave it alone; silence is refused
+        MemoryBlock projectState;
+        proc.getStateInformation (projectState);
+        auto reopenedPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
+        auto& reopened = *reopenedPtr;
+        reopened.setStateInformation (projectState.getData(), (int) projectState.getSize());
+        const bool keptInProject = reopened.getVoiceSample().get() == proc.getVoiceSample().get();
+        reopened.selectPreset (programIndex (reopened, "Hero Lead"));
+        const bool keptByPreset = reopened.getVoiceSample().get() == proc.getVoiceSample().get();
+        AudioBuffer<float> silence (1, 48000);
+        silence.clear();
+        const bool silentRefused = ! reopened.setVoiceRecording (silence, 48000.0) && keptByPreset;
+        auto freshPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
+        auto& fresh = *freshPtr;
+        const bool hasDefault = fresh.getVoiceSample().getLength() > 8000;
+        res.check (keptInProject && keptByPreset && silentRefused && hasDefault,
+                   "VOICE: saved with the project, presets keep it, silence refused, 'aah' out of the box",
+                   String (keptInProject ? "project ok" : "PROJECT LOST") + ", " + (keptByPreset ? "preset kept it" : "PRESET REPLACED IT")
+                       + ", " + (silentRefused ? "silence refused" : "SILENCE ACCEPTED") + ", default "
+                       + String (fresh.getVoiceSample().getLength() / bb::VoiceSample::rate, 2) + " s");
     }
 
     std::cout << "\n  " << res.passed << " passed, " << res.failed << " failed\n";
@@ -1607,7 +1755,8 @@ static int runSnapshot (const File& outDir)
 {
     outDir.createDirectory();
     AudioProcessor::setTypeOfNextNewPlugin (AudioProcessor::wrapperType_Standalone);   // the app: JAM + REC visible
-    BitBuddyProcessor proc;
+    auto procPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
+    auto& proc = *procPtr;
     proc.prepareToPlay (44100.0, 512);
 
     // key: 0 = C ... 11 = B;  scale: 0 = Scale Lock off, 4 = minor pentatonic
@@ -1761,7 +1910,8 @@ static int runFocusTest()
     std::cout << "\n=== Keyboard focus test ===\n\n";
 
     AudioProcessor::setTypeOfNextNewPlugin (AudioProcessor::wrapperType_Standalone);   // the app: JAM + REC visible
-    BitBuddyProcessor proc;
+    auto procPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
+    auto& proc = *procPtr;
     proc.prepareToPlay (44100.0, 512);
     std::unique_ptr<AudioProcessorEditor> editor (proc.createEditor());
     editor->addToDesktop (ComponentPeer::windowHasTitleBar | ComponentPeer::windowAppearsOnTaskbar);

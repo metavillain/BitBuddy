@@ -64,6 +64,7 @@ BitBuddyProcessor::BitBuddyProcessor()
 
     setCustomWave (bb::defaultCustomWave());
     clearMacros();
+    voiceSample.set (bb::defaultVoiceSample());
 }
 
 BitBuddyProcessor::~BitBuddyProcessor()
@@ -210,6 +211,8 @@ bool BitBuddyProcessor::macroFromString (const juce::String& s, bb::Macro& m)
 void BitBuddyProcessor::writeExtras (const std::function<void (const juce::String& key, const juce::String& value)>& set) const
 {
     set ("customWave", customWaveToString (getCustomWave()));
+    const auto voice = voiceSample.get();   // (the built-in "aah" is just named, to keep projects small)
+    set ("voice", voice == bb::defaultVoiceSample() ? juce::String ("default") : bb::voiceSampleToString (voice));
     for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
         set ("macro" + juce::String (lane), macroToString (getMacro (lane)));
 }
@@ -221,6 +224,14 @@ void BitBuddyProcessor::readExtras (const std::function<juce::String (const juce
         setCustomWave (w);
     else if (! keepWaveIfMissing)
         setCustomWave (bb::defaultCustomWave());
+
+    // A voice comes with projects and your presets (factory presets, and files from before 1.2, keep yours)
+    const auto voiceText = get ("voice");
+    std::vector<std::int8_t> voice;
+    if (voiceText == "default")
+        voiceSample.set (bb::defaultVoiceSample());
+    else if (bb::voiceSampleFromString (voiceText, voice))
+        voiceSample.set (voice);
 
     clearMacros();   // lanes that aren't mentioned are off
     for (int lane = 0; lane < bb::kNumMacroLanes; ++lane)
@@ -320,6 +331,7 @@ void BitBuddyProcessor::updateEngineParams (double bpm)
     ep.glide     = pGlide->load();
     ep.mono      = idx (pVoiceMode, 1) == 1;
     ep.console   = (bb::Console) idx (pConsole, 3);
+    ep.voice     = &voiceSample;
     ep.sweepMode = (bb::SweepMode) idx (pSweepMode, 2);
     ep.vibShape  = (bb::VibShape) idx (pVibShape, 2);
     stereoMode   = idx (pStereo, 2);
@@ -383,6 +395,10 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
     // ...and sound effects / jingles / songs started from the UI
     notePlayer.addEvents (midi, nullptr, numSamples, renderRate);
+    humTracker.popEvents ([&midi] (int note, bool on, float velocity)
+    {
+        midi.addEvent (on ? juce::MidiMessage::noteOn (1, note, velocity) : juce::MidiMessage::noteOff (1, note), 0);
+    });
 
     // Re-read the settings only when a knob, drawing, macro or the DAW tempo changed
     const double tempo = hostTempo();
@@ -596,7 +612,7 @@ void BitBuddyProcessor::loadProgram (int index)
         const char* text = nullptr;
         if (key == "customWave")
             text = preset.customWave;
-        else if (const int lane = key.getTrailingIntValue(); juce::isPositiveAndBelow (lane, bb::kNumMacroLanes))
+        else if (const int lane = key.getTrailingIntValue(); key.startsWith ("macro") && juce::isPositiveAndBelow (lane, bb::kNumMacroLanes))
             text = preset.macros[(size_t) lane];
         return text != nullptr ? juce::String (text) : juce::String();
     }, true);
@@ -762,6 +778,23 @@ void BitBuddyProcessor::playJingle (int type)
                                      lastTempo, rng));
 }
 
+bool BitBuddyProcessor::setVoiceRecording (const juce::AudioBuffer<float>& audio, double sampleRate)
+{
+    const auto voice = bb::makeVoiceSample (audio, sampleRate);
+    if (voice.empty())
+        return false;
+    setVoiceSample (voice);
+    return true;
+}
+
+void BitBuddyProcessor::setVoiceSample (const std::vector<std::int8_t>& voice)
+{
+    voiceSample.set (voice);
+    if (juce::roundToInt (pWave->load()) == (int) bb::Wave::Voice)
+        markRemixed();
+    updateHostDisplay (juce::AudioProcessor::ChangeDetails().withNonParameterStateChanged (true));
+}
+
 juce::File BitBuddyProcessor::getSoundsFolder()
 {
     return bb::Recorder::getRecordingsFolder().getSiblingFile ("BitBuddy Sounds");
@@ -772,7 +805,8 @@ bool BitBuddyProcessor::renderSoundToWav (const juce::File& file)
     // A private copy of BitBuddy with this exact sound, played offline (as fast as the computer can)
     constexpr double sr = 44100.0;
     constexpr int block = 512;
-    BitBuddyProcessor copy;
+    auto copyPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap)
+    auto& copy = *copyPtr;
     juce::MemoryBlock state;
     getStateInformation (state);
     copy.setStateInformation (state.getData(), (int) state.getSize());

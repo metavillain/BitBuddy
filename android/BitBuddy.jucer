@@ -15,6 +15,7 @@
               pluginManufacturerCode="Bbdl" pluginCode="Bbd1"
               pluginCharacteristicsValue="pluginIsSynth,pluginWantsMidiIn,pluginEditorRequiresKeys"
               cppLanguageStandard="20" addUsingNamespaceToJuceHeader="0" useAppConfig="0"
+              defines="BB_STANDALONE_HOLDER=1"
               jucerFormatVersion="1">
   <MAINGROUP id="BbG001" name="BitBuddy">
     <GROUP id="BbG002" name="src">
@@ -41,6 +42,12 @@
       <FILE id="BbF021" name="GameSounds.cpp" compile="1" resource="0" file="../src/GameSounds.cpp"/>
       <FILE id="BbF022" name="GameSounds.h" compile="0" resource="0" file="../src/GameSounds.h"/>
       <FILE id="BbF023" name="SoundCode.cpp" compile="1" resource="0" file="../src/SoundCode.cpp"/>
+      <FILE id="BbF024" name="VoiceSample.cpp" compile="1" resource="0" file="../src/VoiceSample.cpp"/>
+      <FILE id="BbF025" name="VoiceSample.h" compile="0" resource="0" file="../src/VoiceSample.h"/>
+      <FILE id="BbF026" name="HumTracker.cpp" compile="1" resource="0" file="../src/HumTracker.cpp"/>
+      <FILE id="BbF027" name="HumTracker.h" compile="0" resource="0" file="../src/HumTracker.h"/>
+      <FILE id="BbF028" name="MicInput.cpp" compile="1" resource="0" file="../src/MicInput.cpp"/>
+      <FILE id="BbF029" name="MicInput.h" compile="0" resource="0" file="../src/MicInput.h"/>
     </GROUP>
     <GROUP id="BbG003" name="assets">
       <FILE id="BbFont" name="PressStart2P-Regular.ttf" compile="0" resource="1" file="../assets/PressStart2P-Regular.ttf"/>
@@ -67,7 +74,7 @@
   <EXPORTFORMATS>
     <ANDROIDSTUDIO targetFolder="Builds/Android" androidMinimumSDK="24" androidTargetSDK="35"
                    androidScreenOrientation="landscape" androidVersionCode="110" bigIcon="BbIcon"
-                   microphonePermissionNeeded="0" androidInternetNeeded="0" androidExternalWriteNeeded="0"
+                   microphonePermissionNeeded="1" androidInternetNeeded="0" androidExternalWriteNeeded="0"
                    androidEnableContentSharing="1"
                    androidReadMediaAudioPermission="0" androidReadMediaImagesPermission="0"
                    androidReadMediaVideoPermission="0" androidPushNotifications="0">
