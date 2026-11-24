@@ -322,7 +322,8 @@ static int runTests (const String& path)
     for (auto* prm : plugin->getParameters())
         automatable += prm->isAutomatable() ? 1 : 0;
     const int ownParams = std::make_unique<BitBuddyProcessor>()->getParameters().size();   // every knob + switch BitBuddy has
-    res.check (automatable == ownParams + 2, "Automatable parameters in the DAW",   // + the VST3 bypass and program switches
+    const int formatExtras = plugin->getPluginDescription().pluginFormatName == "VST3" ? 2 : 0;   // VST3 adds bypass + program
+    res.check (automatable == ownParams + formatExtras, "Automatable parameters in the DAW",
                String (automatable) + " of " + String (ownParams) + " (+" + String (plugin->getParameters().size() - automatable) + " hidden MIDI-CC slots)");
     res.check (plugin->getNumPrograms() == (int) bb::factoryPresets().size() && plugin->getNumPrograms() >= 31, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
 
