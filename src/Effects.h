@@ -250,7 +250,8 @@ public:
         target = (float) std::clamp (seconds * sr, 16.0, (double) size - 4.0);
     }
 
-    void process (float in, float mix, float feedback, float& outL, float& outR) noexcept
+    /** inL / inR: the dry sound (the same value twice for a mono sound). */
+    void process (float inL, float inR, float mix, float feedback, float& outL, float& outR) noexcept
     {
         delay += (target - delay) * 0.0007f;   // glide smoothly when the tempo changes
 
@@ -265,14 +266,14 @@ public:
         const float echoL = left[(size_t) i0]  + (left[(size_t) i1]  - left[(size_t) i0])  * frac;
         const float echoR = right[(size_t) i0] + (right[(size_t) i1] - right[(size_t) i0]) * frac;
 
-        left[(size_t) writePos]  = in + echoR * feedback;   // L -> R -> L ...
+        left[(size_t) writePos]  = 0.5f * (inL + inR) + echoR * feedback;   // L -> R -> L ...
         right[(size_t) writePos] = echoL * feedback;
 
         if (++writePos >= size)
             writePos = 0;
 
-        outL = in + echoL * mix;
-        outR = in + echoR * mix;
+        outL = inL + echoL * mix;
+        outR = inR + echoR * mix;
     }
 
 private:
@@ -280,5 +281,39 @@ private:
     int size = 1, writePos = 0;
     float delay = 1.0f, target = 1.0f;
     std::vector<float> left, right;
+};
+//==============================================================================
+/** Everything one channel goes through before the echo: DC blocker -> C64 filter ->
+    console tone -> crunch. A mono sound uses one; STEREO "Wide" uses one per side. */
+struct ChannelFx
+{
+    DcBlocker dc;
+    SidFilter filter;
+    ConsoleTone tone;
+    Crusher crusher;
+
+    void prepare (double sampleRate)
+    {
+        filter.prepare (sampleRate);
+        tone.prepare (sampleRate);
+        crusher.prepare (sampleRate);
+        reset();
+    }
+
+    void reset() noexcept
+    {
+        dc.reset();
+        filter.reset();
+        tone.reset();
+        crusher.reset();
+    }
+
+    float process (float x, bool useFilter) noexcept
+    {
+        x = dc.process (x);
+        if (useFilter)
+            x = filter.process (x);
+        return crusher.process (tone.process (x));
+    }
 };
 } // namespace bb

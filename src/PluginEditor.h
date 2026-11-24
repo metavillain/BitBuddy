@@ -333,11 +333,11 @@ private:
 
 //==============================================================================
 /** Everything you see. 1000 units wide (scaled to the window); its height depends
-    on which boxes are shown (778 with all of them). */
+    on which boxes are shown (fullHeight with all of them). */
 class MainPanel : public juce::Component, private juce::Timer
 {
 public:
-    static constexpr int baseWidth = 1000, fullHeight = 778;
+    static constexpr int baseWidth = 1000, fullHeight = 800;
 
     MainPanel (BitBuddyProcessor&, RetroLookAndFeel&);
     ~MainPanel() override;
@@ -443,9 +443,11 @@ private:
     // 4. movement
     Knob vibDepth, vibRate, vibDelay, sweepAmt, sweepTime, pwm, glide;
     ParamButtons voiceModeButtons;
+    ParamButtons vibShapeButtons, sweepModeButtons;   // 1.2: vibrato shapes, sweep modes
 
     // 5. crunch + echo
     Knob bits, rate, echoMix, echoFeedback, volume;
+    ParamButtons stereoButtons;                         // 1.2: MIDDLE / WIDE / SWING
     juce::ComboBox echoTimeBox;
     juce::Label echoTimeLabel;
 

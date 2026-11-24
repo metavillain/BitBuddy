@@ -52,6 +52,9 @@ BitBuddyProcessor::BitBuddyProcessor()
     pFilterReso   = get (bb::ids::filterReso);
     pFilterEnv    = get (bb::ids::filterEnv);
     pConsole      = get (bb::ids::console);
+    pSweepMode    = get (bb::ids::sweepMode);
+    pVibShape     = get (bb::ids::vibShape);
+    pStereo       = get (bb::ids::stereo);
 
     // Any knob that moves marks the engine settings as out of date
     for (auto* p : getParameters())
@@ -249,14 +252,13 @@ bool BitBuddyProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
 void BitBuddyProcessor::prepareToPlay (double sampleRate, int)
 {
     engine.prepare (sampleRate);
-    crusher.prepare (sampleRate);
+    for (auto& f : fx)
+        f.prepare (sampleRate);
     echo.prepare (sampleRate);
-    filter.prepare (sampleRate);
-    consoleTone.prepare (sampleRate);
     jam.prepare (sampleRate);
-    dcBlocker.reset();
     effectsIdle = true;
-    echoWasOn = filterWasOn = false;
+    echoWasOn = filterWasOn = wideWasOn = false;
+    swingPhase = 0.0;
     quietSamples = 0;
 
     outputGain.reset (sampleRate, 0.02);
@@ -316,12 +318,19 @@ void BitBuddyProcessor::updateEngineParams (double bpm)
     ep.glide     = pGlide->load();
     ep.mono      = idx (pVoiceMode, 1) == 1;
     ep.console   = (bb::Console) idx (pConsole, 3);
+    ep.sweepMode = (bb::SweepMode) idx (pSweepMode, 2);
+    ep.vibShape  = (bb::VibShape) idx (pVibShape, 2);
+    stereoMode   = idx (pStereo, 2);
+    ep.wide      = stereoMode == 1;
     engine.setParams (ep);
-    consoleTone.setConsole ((int) ep.console);
-
-    crusher.setParams ((int) std::lround (pBits->load()), pRate->load());
-    filter.setParams (idx (pFilterType, 3), pFilterCutoff->load(), pFilterReso->load(), pFilterEnv->load(),
-                      pDecay->load());   // the filter envelope closes over the same DECAY time as the volume
+    swingStep = 1.0 / (4.0 * secondsPerBeat * (getSampleRate() > 0.0 ? getSampleRate() : 44100.0));   // one bar: side to side and back
+    for (auto& f : fx)
+    {
+        f.tone.setConsole ((int) ep.console);
+        f.crusher.setParams ((int) std::lround (pBits->load()), pRate->load());
+        f.filter.setParams (idx (pFilterType, 3), pFilterCutoff->load(), pFilterReso->load(), pFilterEnv->load(),
+                            pDecay->load());   // the filter envelope closes over the same DECAY time as the volume
+    }
 
     static constexpr double echoBeats[] = { 0.25, 0.5, 0.75, 1.0, 1.5, 2.0 };
     echo.setTimeSeconds (juce::jmin (2.4, echoBeats[idx (pEchoTime, 5)] * secondsPerBeat));
@@ -379,27 +388,33 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         updateEngineParams (tempo);
     }
 
-    // 1. Synth voices -> channel 0, split at each MIDI event for sample accuracy
+    // 1. Synth voices -> channel 0 (STEREO Wide: channels 0 + 1), split at each MIDI
+    //    event for sample accuracy
     float* mono = buffer.getWritePointer (0);
+    float* right = numChannels > 1 ? buffer.getWritePointer (1) : nullptr;
+    const bool wide = stereoMode == 1 && right != nullptr;
     bool engineActive = false;
     int pos = 0;
+    auto renderUntil = [&] (int end)
+    {
+        if (end <= pos)
+            return;
+        engineActive = (wide ? engine.render (mono + pos, right + pos, end - pos)
+                             : engine.render (mono + pos, end - pos)) || engineActive;
+        pos = end;
+    };
     numFilterTriggers = 0;
     for (const auto meta : midi)
     {
-        const int eventPos = juce::jlimit (0, numSamples, meta.samplePosition);
-        if (eventPos > pos)
-        {
-            engineActive = engine.render (mono + pos, eventPos - pos) || engineActive;
-            pos = eventPos;
-        }
+        renderUntil (juce::jlimit (0, numSamples, meta.samplePosition));
+        const int eventPos = pos;
         const auto msg = meta.getMessage();
         if (msg.isNoteOn() && numFilterTriggers < (int) filterTriggers.size())
             filterTriggers[(size_t) numFilterTriggers++] = eventPos;   // the filter envelope opens right here
         recorder.addMidi (msg, eventPos);
         handleMidi (msg);
     }
-    if (pos < numSamples)
-        engineActive = engine.render (mono + pos, numSamples - pos) || engineActive;
+    renderUntil (numSamples);
 
     midi.clear();
 
@@ -420,6 +435,7 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         writeRecording (buffer, numSamples);   // keep the recording's timeline running
         return;
     }
+    const bool wasIdle = effectsIdle;
     effectsIdle = false;
     scope.markActive();
 
@@ -429,37 +445,64 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         echo.clear();
     echoWasOn = useEcho;
 
-    const bool useFilter = filter.isOn();
+    const bool useFilter = fx[0].filter.isOn();
     if (useFilter && ! filterWasOn)
-        filter.reset();
+        for (auto& f : fx)
+            f.filter.reset();
     filterWasOn = useFilter;
 
-    // 3. Effects: DC blocker -> C64 filter -> crunch -> echo -> volume
-    float* right = numChannels > 1 ? buffer.getWritePointer (1) : nullptr;
+    if (wide && ! wideWasOn)
+        fx[1] = fx[0];   // the right side starts where the left one is (no jump)
+    wideWasOn = wide;
+    const bool swing = stereoMode == 2;
+    if (swing)
+    {
+        // Locked to the bars while the DAW plays; otherwise it starts in the middle when you start playing
+        bool synced = false;
+        if (auto* ph = getPlayHead())
+            if (auto info = ph->getPosition())
+                if (auto ppq = info->getPpqPosition(); ppq.hasValue() && info->getIsPlaying())
+                {
+                    swingPhase = std::fmod (*ppq / 4.0, 1.0);
+                    synced = true;
+                }
+        if (! synced && wasIdle)
+            swingPhase = 0.0;
+    }
+
+    // 3. Effects: DC blocker -> C64 filter -> console -> crunch -> echo -> stereo -> volume
     float peak = 0.0f;
     int nextTrigger = 0;
 
     for (int i = 0; i < numSamples; ++i)
     {
-        float x = dcBlocker.process (mono[i]);
-        if (useFilter)
+        while (useFilter && nextTrigger < numFilterTriggers && filterTriggers[(size_t) nextTrigger] <= i)
         {
-            while (nextTrigger < numFilterTriggers && filterTriggers[(size_t) nextTrigger] <= i)
-            {
-                filter.trigger();
-                ++nextTrigger;
-            }
-            x = filter.process (x);
+            fx[0].filter.trigger();
+            fx[1].filter.trigger();
+            ++nextTrigger;
         }
-        x = consoleTone.process (x);
-        x = crusher.process (x);
+        const float xl = fx[0].process (mono[i], useFilter);
+        const float xr = wide ? fx[1].process (right[i], useFilter) : xl;
 
         const float g = outputGain.getNextValue();
-        scope.push (x * g);
+        scope.push (0.5f * (xl + xr) * g);
 
-        float l = x, r = x;
+        float l = xl, r = xr;
         if (useEcho)
-            echo.process (x, echoMix, echoFeedback, l, r);
+            echo.process (xl, xr, echoMix, echoFeedback, l, r);
+
+        if (swing)
+        {
+            // Equal loudness at every position: sides at 80%, through the middle twice a bar
+            swingPhase += swingStep;
+            if (swingPhase >= 1.0)
+                swingPhase -= 1.0;
+            const float pan = 0.8f * (float) std::sin (juce::MathConstants<double>::twoPi * swingPhase);
+            const float angle = (pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
+            l *= juce::MathConstants<float>::sqrt2 * std::cos (angle);
+            r *= juce::MathConstants<float>::sqrt2 * std::sin (angle);
+        }
 
         l *= g;
         r *= g;
@@ -496,11 +539,9 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     {
         effectsIdle = true;
         quietSamples = 0;
-        dcBlocker.reset();
-        crusher.reset();
+        for (auto& f : fx)
+            f.reset();
         echo.clear();
-        filter.reset();
-        consoleTone.reset();
     }
 
     for (int ch = 2; ch < numChannels; ++ch)
@@ -641,6 +682,9 @@ void BitBuddyProcessor::rollSection (Section section, juce::Random& rng)
             const bool sweep = chance (0.25f);
             set (bb::ids::sweepAmt,  sweep ? (float) ((chance (0.5f) ? 1 : -1) * (1 + rng.nextInt (24))) : 0.0f);
             set (bb::ids::sweepTime, range (0.05f, 0.4f));
+            const float sweepMode = rng.nextFloat(), vibShape = rng.nextFloat();
+            set (bb::ids::sweepMode, sweepMode < 0.8f ? 0.0f : (sweepMode < 0.9f ? 1.0f : 2.0f));
+            set (bb::ids::vibShape,  vibShape < 0.75f ? 0.0f : (vibShape < 0.9f ? 1.0f : 2.0f));
 
             set (bb::ids::pwm,       chance (0.3f) ? range (0.2f, 0.8f) : 0.0f);
             set (bb::ids::glide,     chance (0.2f) ? range (0.02f, 0.15f) : 0.0f);
@@ -652,6 +696,8 @@ void BitBuddyProcessor::rollSection (Section section, juce::Random& rng)
         {
             set (bb::ids::bits, chance (0.5f) ? 8.0f : (float) (4 + rng.nextInt (13)));
             set (bb::ids::rate, chance (0.7f) ? 48000.0f : range (4000.0f, 22050.0f));
+            const float stereo = rng.nextFloat();
+            set (bb::ids::stereo, stereo < 0.6f ? 0.0f : (stereo < 0.9f ? 1.0f : 2.0f));
 
             const bool useEcho = chance (0.5f);
             set (bb::ids::echoMix,      useEcho ? range (0.15f, 0.4f) : 0.0f);

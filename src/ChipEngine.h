@@ -62,6 +62,18 @@ struct Macro
 };
 enum class ArpPattern : int { Up = 0, Down, UpDown, Random, Once };
 
+// How SWEEP moves the pitch (added in 1.2)
+//   Slide   = start away from the note and slide into it (lasers, jumps)
+//   Forever = keep falling (or rising) for as long as the note lasts, like the
+//             NES "sweep unit" (falling bombs, power-downs)
+//   Bounce  = slide away and back again, over and over (sirens, alarms)
+enum class SweepMode : int { Slide = 0, Forever, Bounce };
+
+// The shape of the vibrato wobble (added in 1.2)
+//   Smooth = a singer's vibrato,  Trill = jump between the note and the one
+//   above it (a classic chiptune trick),  Random = a wobbly, broken-tape wiggle
+enum class VibShape : int { Smooth = 0, Trill, Random };
+
 struct EngineParams
 {
     Wave wave = Wave::Square;
@@ -73,6 +85,8 @@ struct EngineParams
     double arpStepSeconds = 0.0625;
     float sweepAmt = 0.0f, sweepTime = 0.15f;                  // semitones, seconds
     float vibDepth = 0.0f, vibRate = 6.0f, vibDelay = 0.2f;    // semitones, Hz, seconds
+    SweepMode sweepMode = SweepMode::Slide;
+    VibShape vibShape = VibShape::Smooth;
     float pwm = 0.0f;                                          // 0..1
     float glide = 0.0f;                                        // seconds
     bool mono = false;
@@ -85,6 +99,10 @@ struct EngineParams
     CustomWave customWave = defaultCustomWave();               // for Wave::Custom
     Console console = Console::Modern;
     std::array<Macro, kNumMacroLanes> macros {};
+
+    // STEREO "Wide" (added in 1.2): each new note goes to the next side (left, right,
+    // left...), like the Game Boy's per-channel panning. Kicks and snares stay in the middle.
+    bool wide = false;
 };
 
 class ChipEngine
@@ -105,6 +123,10 @@ public:
     /** Adds numSamples of mono audio into out. Returns false (and does no work)
         when nothing is playing. */
     bool render (float* out, int numSamples) noexcept;
+
+    /** Stereo version: adds into left and right, each note at its own side
+        (see EngineParams::wide). */
+    bool render (float* left, float* right, int numSamples) noexcept;
 
     /** True when no voice is sounding. */
     bool isIdle() const noexcept;
@@ -144,6 +166,8 @@ private:
         float hz = 0.0f, inc = 0.0f;     // frequency, and phase increment per sample
 
         double phase = 0.0, lfoPhase = 0.25, pwmPhase = 0.0;
+        float vibHold = 0.0f;            // Random vibrato: the current random value
+        std::uint32_t vibRng = 0x2545F491u;
         std::uint32_t lfsr = 1;
         double noiseClockPhase = 0.0;
 
@@ -163,6 +187,7 @@ private:
         float chokeGain = 1.0f;
 
         float gate = 0.0f;   // NES triangle: no volume control, just on / off (smoothed against clicks)
+        float panL = 1.0f, panR = 1.0f;   // STEREO Wide: this note's side
 
         // instrument macros
         int macroFrame = 0;
@@ -201,6 +226,8 @@ private:
     void rebuildHeldSequence();
     void tickHeldArp() noexcept;
     void releaseAllTones() noexcept;
+    void setPan (Voice&, int side) const noexcept;   // -1 left, 0 middle, +1 right
+    bool nextSideRight = false;
 
     static int nextIndex (int idx, int& dir, int len, ArpPattern p, std::uint32_t& rng) noexcept;
 

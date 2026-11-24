@@ -13,6 +13,9 @@ juce::StringArray keyNames()        { return { "C", "C#", "D", "D#", "E", "F", "
 juce::StringArray scaleNames()      { return { "Off", "Major", "Minor", "Major Penta", "Minor Penta", "Blues", "Dorian", "Harm. Minor" }; }
 juce::StringArray filterTypeNames() { return { "Off", "Low Pass", "Band Pass", "High Pass" }; }
 juce::StringArray consoleNames()    { return { "Modern", "NES", "Game Boy", "C64" }; }
+juce::StringArray sweepModeNames()  { return { "Slide", "Forever", "Bounce" }; }
+juce::StringArray vibShapeNames()   { return { "Smooth", "Trill", "Random" }; }
+juce::StringArray stereoNames()     { return { "Middle", "Wide", "Swing" }; }
 
 namespace
 {
@@ -134,6 +137,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 
     // 8. Console mode (added in 1.1): sound like a real NES / Game Boy / C64
     addChoice (ids::console, "Console", consoleNames(), 0, 2);
+
+    // 9. Added in 1.2: sweep modes, vibrato shapes, Game Boy stereo
+    addChoice (ids::sweepMode, "Sweep Mode", sweepModeNames(), 0, 3);
+    addChoice (ids::vibShape,  "Vibrato Shape", vibShapeNames(), 0, 3);
+    addChoice (ids::stereo,    "Stereo", stereoNames(), 0, 3);
 
     return layout;
 }

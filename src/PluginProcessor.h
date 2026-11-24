@@ -159,18 +159,17 @@ private:
     void loadProgram (int index);
 
     bb::ChipEngine engine;
-    bb::DcBlocker dcBlocker;
-    bb::Crusher crusher;
+    std::array<bb::ChannelFx, 2> fx;   // [0] = mono / left, [1] = right (STEREO Wide only)
     bb::PingPongEcho echo;
-    bb::SidFilter filter;
-    bb::ConsoleTone consoleTone;
     bb::JamBand jam;
     std::atomic<bool> jamOn { false };
     std::atomic<int> jamStyle { 0 };
     std::atomic<float> jamTempo { 120.0f };
     juce::SmoothedValue<float> outputGain;
     float echoMix = 0.0f, echoFeedback = 0.0f;
-    bool echoWasOn = false, filterWasOn = false;
+    bool echoWasOn = false, filterWasOn = false, wideWasOn = false;
+    int stereoMode = 0;          // 0 Middle, 1 Wide, 2 Swing
+    double swingPhase = 0.0, swingStep = 0.0;   // Swing: once from side to side per bar
     std::array<int, 64> filterTriggers {};   // sample positions of this block's new notes
     int numFilterTriggers = 0;
     bool effectsIdle = true;   // no notes and all effect tails have died away
@@ -232,6 +231,9 @@ private:
     std::atomic<float>* pFilterReso = nullptr;
     std::atomic<float>* pFilterEnv = nullptr;
     std::atomic<float>* pConsole = nullptr;
+    std::atomic<float>* pSweepMode = nullptr;
+    std::atomic<float>* pVibShape = nullptr;
+    std::atomic<float>* pStereo = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BitBuddyProcessor)
 };

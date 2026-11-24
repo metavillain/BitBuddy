@@ -10,6 +10,9 @@ namespace ch  { constexpr float major = 0, minor = 1, power = 2, octave = 3, sus
 namespace pat { constexpr float up = 0, down = 1, upDown = 2, random = 3, once = 4; }
 namespace sp  { constexpr float e8 = 0, s16 = 1, s16t = 2, t32 = 3, s64 = 4, hz15 = 5, hz30 = 6, hz60 = 7; }
 namespace et  { constexpr float s16 = 0, e8 = 1, e8d = 2, q4 = 3, q4d = 4, h2 = 5; }
+namespace swm { constexpr float slide = 0, forever = 1, bounce = 2; }
+namespace vs  { constexpr float smooth = 0, trill = 1, random = 2; }
+namespace st  { constexpr float middle = 0, wide = 1, swing = 2; }
 constexpr float mono = 1.0f;
 
 const std::vector<Preset>& factoryPresets()
@@ -33,6 +36,11 @@ const std::vector<Preset>& factoryPresets()
         { "Thin Lead", "Very thin 12.5% pulse - cuts through any mix.",
           { { wave, w::pulse12 }, { decay, 0.3f }, { sustain, 0.7f }, { release, 0.1f },
             { vibDepth, 0.25f }, { vibRate, 7.0f }, { vibDelay, 0.3f }, { echoMix, 0.2f } } },
+
+        { "Trill Lead", "Hold a note: after a moment it trills like a game's title-screen melody.",
+          { { wave, w::pulse25 }, { decay, 0.4f }, { sustain, 0.7f }, { release, 0.1f },
+            { vibShape, vs::trill }, { vibDepth, 0.5f }, { vibRate, 9.0f }, { vibDelay, 0.3f },
+            { echoMix, 0.2f }, { echoTime, et::e8d } } },
 
         { "Triangle Bass", "The classic NES bass. Play low notes, one at a time.",
           { { wave, w::triangle }, { attack, 0.001f }, { decay, 0.25f }, { sustain, 0.85f }, { release, 0.04f },
@@ -72,6 +80,11 @@ const std::vector<Preset>& factoryPresets()
         { "Power Arp", "Rock power chords, bouncing across two octaves.",
           { { wave, w::pulse12 }, { arpMode, am::chord }, { arpChord, ch::power }, { arpOctaves, 2.0f },
             { arpPattern, pat::upDown }, { arpSpeed, sp::t32 }, { echoMix, 0.2f } } },
+
+        { "Stereo Arp", "Use headphones! Each chord note jumps to the other ear, like a Game Boy.",
+          { { wave, w::square }, { arpMode, am::notes }, { arpPattern, pat::up }, { arpSpeed, sp::s16 },
+            { arpOctaves, 2.0f }, { stereo, st::wide }, { decay, 0.2f }, { sustain, 0.4f }, { release, 0.1f },
+            { echoMix, 0.3f }, { echoTime, et::e8d }, { echoFeedback, 0.3f } } },
 
         { "Note Arpeggiator", "Hold 3 or 4 keys and it plays them as a sparkling pattern.",
           { { wave, w::pulse12 }, { arpMode, am::notes }, { arpPattern, pat::upDown }, { arpSpeed, sp::s16 },
@@ -122,6 +135,15 @@ const std::vector<Preset>& factoryPresets()
           { { wave, w::square }, { arpMode, am::chord }, { arpChord, ch::major }, { arpOctaves, 3.0f },
             { arpPattern, pat::once }, { arpSpeed, sp::hz30 },
             { attack, 0.001f }, { decay, 1.0f }, { sustain, 0.2f }, { release, 0.2f }, { echoMix, 0.2f } } },
+
+        { "Falling Bomb", "Hold a HIGH note... and let go when it lands!",
+          { { wave, w::square }, { sweepMode, swm::forever }, { sweepAmt, 12.0f }, { sweepTime, 1.2f },
+            { attack, 0.001f }, { sustain, 1.0f }, { release, 0.05f }, { vibDepth, 0.15f }, { vibRate, 12.0f },
+            { vibDelay, 0.0f } } },
+
+        { "Siren", "Hold a note. Wee-woo, wee-woo!",
+          { { wave, w::pulse25 }, { sweepMode, swm::bounce }, { sweepAmt, -7.0f }, { sweepTime, 0.45f },
+            { attack, 0.01f }, { sustain, 1.0f }, { release, 0.1f }, { stereo, st::swing } } },
 
         { "Explosion", "Play LOW notes for a big boom.",
           { { wave, w::noise }, { sweepAmt, 12.0f }, { sweepTime, 0.8f },

@@ -1333,8 +1333,8 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
       screenBox   ("screen",   {},  "SCREEN",                       pal::green,  370, 168),
       shapeBox    ("shape",    "2", "SHAPE IT  (VOLUME ENVELOPE)",  pal::lime,   470, 150),
       chordsBox   ("chords",   "3", "MAGIC CHORDS  (ARPEGGIATOR)",  pal::cyan,   500, 150),
-      movementBox ("movement", "4", "ADD MOVEMENT",                 pal::orange, 560, 150),
-      crunchBox   ("crunch",   "5", "CRUNCH + ECHO",                pal::sky,    410, 150),
+      movementBox ("movement", "4", "ADD MOVEMENT",                 pal::orange, 560, 172),
+      crunchBox   ("crunch",   "5", "CRUNCH + ECHO + STEREO",       pal::sky,    410, 172),
       playBox     ("play",     {},  p.isStandaloneApp() ? "PLAY ALONG  (KEY, SCALE, JAM, REC)" : "PLAY ALONG  (KEY + SCALE)",
                    pal::pink, 490, 112),
       waveSelector (*state.getParameter (ids::wave), kNumWaves, waveButtons (pal::yellow), false, 3),
@@ -1366,10 +1366,28 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
                                        "MONO: one note at a time, like a real sound-chip channel. Great for bass and leads with Glide." },
                                      pal::orange),
                         true),
+      vibShapeButtons (*state.getParameter (ids::vibShape), 3,
+                       textButtons ({ "SMOOTH", "TRILL", "RANDOM" },
+                                    { "SMOOTH vibrato: a singer's wobble, up and down.",
+                                      "TRILL: jumps between your note and the one above it, very fast - a classic chiptune trick. VIBRATO sets how far (1.0 = 2 semitones), VIB RATE how fast.",
+                                      "RANDOM vibrato: wobbles to a new random height each time, like a broken old tape." },
+                                    pal::orange)),
+      sweepModeButtons (*state.getParameter (ids::sweepMode), 3,
+                        textButtons ({ "SLIDE", "FOREVER", "BOUNCE" },
+                                     { "SLIDE: each note starts SWEEP semitones away and slides to the right pitch.",
+                                       "FOREVER: the pitch keeps falling (or rising, with - SWEEP) for as long as you hold the note, like the NES sweep unit. Falling bombs, power-downs! SWP TIME = how long each SWEEP step takes.",
+                                       "BOUNCE: slides away and back, over and over - sirens and alarms." },
+                                     pal::orange)),
       bits         (state, ids::bits,         "BITS",    pal::sky, "BITS: lowers the audio resolution. 16-bit = clean, 8-bit = classic, 4-bit and below = crunchy and gritty!"),
       rate         (state, ids::rate,         "RATE",    pal::sky, "RATE: lowers the sample rate for a grainy, crunchy old-hardware sound. Turn it all the way up ('Clean') to switch it off."),
       echoMix      (state, ids::echoMix,      "ECHO",    pal::sky, "ECHO: adds echoes that bounce between your left and right speakers. Chiptune composers used to fake this with a spare channel!"),
       echoFeedback (state, ids::echoFeedback, "REPEATS", pal::sky, "REPEATS: how many echoes you hear - low = one or two, high = lots."),
+      stereoButtons (*state.getParameter (ids::stereo), 3,
+                     textButtons ({ "MIDDLE", "WIDE", "SWING" },
+                                  { "STEREO MIDDLE: the sound comes from straight in front of you.",
+                                    "STEREO WIDE: every new note goes to the other side (left, right, left...), like a Game Boy in headphones. Drums get their own spots.",
+                                    "STEREO SWING: the whole sound swings slowly from one speaker to the other, once a bar." },
+                                  pal::sky)),
       volume       (state, ids::volume,       "VOLUME",  pal::sky, "VOLUME: the overall loudness of BitBuddy."),
       filterBox (p.apvts),
       keyboard (p.keyboardState)
@@ -1498,10 +1516,13 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     for (auto* k : { &vibDepth, &vibRate, &vibDelay, &sweepAmt, &sweepTime, &pwm, &glide })
         addAndMakeVisible (k);
     addAndMakeVisible (voiceModeButtons);
+    addAndMakeVisible (vibShapeButtons);
+    addAndMakeVisible (sweepModeButtons);
 
     // --- 5. crunch + echo ---
     for (auto* k : { &bits, &rate, &echoMix, &echoFeedback, &volume })
         addAndMakeVisible (k);
+    addAndMakeVisible (stereoButtons);
     setupCombo (echoTimeBox, echoTimeLabel, "TIME", echoTimeNames(),
                 "ECHO TIME: the gap between echoes, locked to your song's tempo. 1/8 D (dotted eighth) is a classic choice.",
                 pal::sky);
@@ -1606,8 +1627,9 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     into (shapeBox,    { &attack, &decay, &sustain, &release, &envelopeView });
     into (chordsBox,   { &arpModeButtons, &chordLabel, &chordBox, &patternLabel, &patternBox, &speedLabel, &speedBox,
                          &arpTip, &octaves });
-    into (movementBox, { &vibDepth, &vibRate, &vibDelay, &sweepAmt, &sweepTime, &pwm, &glide, &voiceModeButtons });
-    into (crunchBox,   { &bits, &rate, &echoMix, &echoTimeLabel, &echoTimeBox, &echoFeedback, &volume });
+    into (movementBox, { &vibDepth, &vibRate, &vibDelay, &sweepAmt, &sweepTime, &pwm, &glide, &voiceModeButtons,
+                         &vibShapeButtons, &sweepModeButtons });
+    into (crunchBox,   { &bits, &rate, &echoMix, &echoTimeLabel, &echoTimeBox, &echoFeedback, &volume, &stereoButtons });
     into (playBox,     { &keyLabel, &keyBox, &scaleLabel, &scaleBox, &scaleTip, &jamButton, &jamStyleBox, &tempoDownButton,
                          &tempoLabel, &tempoUpButton, &recordButton, &recordStatus, &showRecordingButton, &appOnlyNote });
 
@@ -1660,6 +1682,8 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
             x += 66;
         }
         voiceModeButtons.setBounds (478, 32, 72, 88);
+        vibShapeButtons.setBounds (10, 144, 194, 22);    // under VIBRATO, VIB RATE, VIB WAIT
+        sweepModeButtons.setBounds (208, 144, 194, 22);  // under SWEEP, SWP TIME (+ PWM)
     };
     crunchBox.layout = [this]
     {
@@ -1670,6 +1694,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
         echoTimeBox.setBounds (198, 48, 76, 26);
         echoFeedback.setBounds (278, 24, 62, 118);
         volume.setBounds (342, 24, 62, 118);
+        stereoButtons.setBounds (10, 144, 192, 22);
     };
     playBox.layout = [this]
     {

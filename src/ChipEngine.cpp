@@ -699,6 +699,9 @@ void ChipEngine::startVoice (Voice& v, int note, float velocity)
     v.chokeGain = 1.0f;
     restartMacros (v);
     lastNote = note;
+
+    setPan (v, p.wide ? (nextSideRight ? 1 : -1) : 0);
+    nextSideRight = ! nextSideRight;
 }
 
 void ChipEngine::retrigger (Voice& v, int note)
@@ -765,6 +768,10 @@ void ChipEngine::startDrum (Voice& v, int note, float velocity)
     v.isDrum = true;
     v.drumType = type;
     v.note = note;
+    // Drum kit sides: kick, snares, clap and mid tom in the middle; hi-hats and high tom
+    // on the right; rim, low tom and crash on the left
+    static constexpr int drumSides[12] = { 0, -1, 0, 0, 0, -1, 1, 0, 1, 1, 1, -1 };
+    setPan (v, drumSides[type]);
     v.velocity = velocityToGain (velocity);
     v.age = ++ageCounter;
 
@@ -817,6 +824,40 @@ bool ChipEngine::render (float* out, int numSamples) noexcept
         out[i] += sum;
     }
     return true;
+}
+
+bool ChipEngine::render (float* left, float* right, int numSamples) noexcept
+{
+    if (isIdle())
+        return false;
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        if (heldArpRunning)
+            tickHeldArp();
+
+        float sumL = 0.0f, sumR = 0.0f;
+        for (auto& v : voices)
+            if (v.active)
+            {
+                const float s = v.isDrum ? renderDrum (v) : renderTone (v);
+                sumL += s * v.panL;
+                sumR += s * v.panR;
+            }
+
+        left[i] += sumL;
+        right[i] += sumR;
+    }
+    return true;
+}
+
+void ChipEngine::setPan (Voice& v, int side) const noexcept
+{
+    // Off to one side but not "hard" (that tires your ears on headphones); same loudness as the middle
+    static constexpr float near = 1.3f, far = 0.5f;
+    const int s = p.wide ? side : 0;
+    v.panL = s < 0 ? near : (s > 0 ? far : 1.0f);
+    v.panR = s > 0 ? near : (s < 0 ? far : 1.0f);
 }
 
 void ChipEngine::tickHeldArp() noexcept
@@ -934,11 +975,35 @@ void ChipEngine::updateModulation (Voice& v) noexcept
     float note = v.pitch + pitchBend;
     const auto t = (float) v.t;
 
-    // Pitch sweep: start sweepAmt semitones away and slide into the note
-    if (p.sweepAmt != 0.0f && t < p.sweepTime)
+    // Pitch sweep (+ = a falling sound, - = a rising one)
+    if (p.sweepAmt != 0.0f)
     {
-        const float x = 1.0f - t / p.sweepTime;
-        note += p.sweepAmt * x * x;
+        switch (p.sweepMode)
+        {
+            case SweepMode::Slide:     // start sweepAmt semitones away and slide into the note
+                if (t < p.sweepTime)
+                {
+                    const float x = 1.0f - t / p.sweepTime;
+                    note += p.sweepAmt * x * x;
+                }
+                break;
+            case SweepMode::Forever:   // sweepAmt semitones every sweepTime seconds, until the note ends
+                note -= p.sweepAmt * t / p.sweepTime;
+                if ((note < 0.0f || note > 120.0f) && v.stage != Stage::Release)
+                {
+                    // Out of range: like the NES, the channel simply goes quiet (a quick fade, no click)
+                    v.stage = Stage::Release;
+                    v.env = std::min (v.env, 0.02f);
+                }
+                break;
+            case SweepMode::Bounce:    // away and back again, over and over
+            {
+                const float x = std::fmod (t / p.sweepTime, 2.0f);
+                note -= p.sweepAmt * (x < 1.0f ? x : 2.0f - x);
+                break;
+            }
+        }
+        note = std::clamp (note, -12.0f, 135.0f);   // stays below 20 kHz however far it slides
     }
 
     // Vibrato: waits vibDelay seconds, then fades in quickly. Mod wheel adds more.
@@ -948,10 +1013,28 @@ void ChipEngine::updateModulation (Voice& v) noexcept
 
     if (vib > 0.0f)
     {
+        const double before = v.lfoPhase;
         v.lfoPhase += p.vibRate * invSr * kControlInterval;
         if (v.lfoPhase >= 1.0)
             v.lfoPhase -= 1.0;
-        note += vib * triLfo (v.lfoPhase);
+
+        switch (p.vibShape)
+        {
+            case VibShape::Smooth:
+                note += vib * triLfo (v.lfoPhase);
+                break;
+            case VibShape::Trill:    // the note, then up by twice the depth (VIBRATO 1.0 = a whole tone)
+                note += v.lfoPhase < 0.5 ? 0.0f : 2.0f * vib;
+                break;
+            case VibShape::Random:   // a new random height every half wobble
+                if ((before < 0.5) != (v.lfoPhase < 0.5))
+                {
+                    v.vibRng = v.vibRng * 1664525u + 1013904223u;
+                    v.vibHold = (float) (v.vibRng >> 8) * (2.0f / 16777216.0f) - 1.0f;
+                }
+                note += vib * v.vibHold;
+                break;
+        }
     }
 
     v.ctrlNote = note;

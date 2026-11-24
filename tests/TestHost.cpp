@@ -12,6 +12,7 @@
 
 #include "../src/PluginProcessor.h"
 #include "../src/PluginEditor.h"
+#include "../src/Presets.h"
 
 #include <chrono>
 #include <functional>
@@ -316,9 +317,10 @@ static int runTests (const String& path)
     int automatable = 0;
     for (auto* prm : plugin->getParameters())
         automatable += prm->isAutomatable() ? 1 : 0;
-    res.check (automatable >= 31 && automatable <= 33, "Automatable parameters in the DAW",
-               String (automatable) + " (+" + String (plugin->getParameters().size() - automatable) + " hidden MIDI-CC slots)");
-    res.check (plugin->getNumPrograms() == 27, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
+    const int ownParams = BitBuddyProcessor().getParameters().size();   // every knob + switch BitBuddy has
+    res.check (automatable == ownParams + 2, "Automatable parameters in the DAW",   // + the VST3 bypass and program switches
+               String (automatable) + " of " + String (ownParams) + " (+" + String (plugin->getParameters().size() - automatable) + " hidden MIDI-CC slots)");
+    res.check (plugin->getNumPrograms() == (int) bb::factoryPresets().size() && plugin->getNumPrograms() >= 31, "Factory presets exposed to the DAW", String (plugin->getNumPrograms()));
 
     // ---- 2. Every preset makes sound, stays finite, and goes silent --------
     std::cout << "\n  -- every preset: sound / no NaN / no clipping / no stuck notes --\n";
@@ -567,6 +569,119 @@ static int runTests (const String& path)
         res.check (nesHold > 0.8 && modernHold < 0.5, "NES triangle: on/off only (no fade), Modern fades",
                    "held level NES " + String (roundToInt (nesHold * 100.0)) + "%, Modern " + String (roundToInt (modernHold * 100.0)) + "%");
         setParam (*plugin, "Console", 0.0f);
+    }
+
+    // ---- 4e. 1.2: sweep modes, vibrato shapes, stereo -------------------------
+    std::cout << "\n  -- sweep modes, vibrato shapes, stereo --\n";
+    {
+        // Straight on the engine: one held note, mono
+        auto engineNote = [&] (const bb::EngineParams& ep, int note, double holdSec, double totalSec)
+        {
+            bb::ChipEngine e;
+            e.prepare (sr);
+            e.setParams (ep);
+            AudioBuffer<float> b (1, (int) (totalSec * sr));
+            b.clear();
+            const int hold = (int) (holdSec * sr);
+            e.noteOn (note, 0.8f);
+            e.render (b.getWritePointer (0), hold);
+            e.noteOff (note);
+            e.render (b.getWritePointer (0) + hold, b.getNumSamples() - hold);
+            return b;
+        };
+        auto noteAt = [&] (const AudioBuffer<float>& b, double sec, int length = 2048)
+        {
+            const double hz = pitchAt (b, sec - 0.5 * length / sr, length, sr, 30.0);
+            return hz > 0.0 ? 69.0 + 12.0 * std::log2 (hz / 440.0) : -1.0;
+        };
+
+        bb::EngineParams ep;
+        ep.wave = bb::Wave::Square;
+        ep.sustain = 1.0f;
+        ep.sweepAmt = 12.0f;
+        ep.sweepTime = 0.25f;
+
+        ep.sweepMode = bb::SweepMode::Slide;
+        const double slideEnd = noteAt (engineNote (ep, 72, 1.0, 1.1), 0.5);
+        ep.sweepMode = bb::SweepMode::Forever;
+        const auto forever = engineNote (ep, 72, 1.0, 1.1);
+        const double f1 = noteAt (forever, 0.25), f2 = noteAt (forever, 0.5);   // 72 - 12 per 0.25 s
+        res.check (std::abs (slideEnd - 72.0) < 0.2 && std::abs (f1 - 60.0) < 0.6 && std::abs (f2 - 48.0) < 0.6,
+                   "SWEEP FOREVER: keeps falling 12 semitones every 0.25 s (SLIDE stops)",
+                   "slide " + String (slideEnd, 1) + ", forever " + String (f1, 1) + " -> " + String (f2, 1));
+
+        // Rising forever: past the top it goes quiet (like the NES), even with the key held
+        ep.sweepAmt = -24.0f;
+        ep.sweepTime = 0.1f;
+        const auto rising = engineNote (ep, 72, 1.0, 1.1);
+        const float early = peakOf (rising, 0.02, 0.1, sr), late = peakOf (rising, 0.4, 0.9, sr);
+        res.check (early > 0.1f && late < 1.0e-4f, "SWEEP FOREVER rising: goes quiet past the top (no whistle)",
+                   String (Decibels::gainToDecibels (early), 1) + " dB -> " + String (Decibels::gainToDecibels (late), 1) + " dB");
+
+        ep.sweepAmt = 12.0f;
+        ep.sweepTime = 0.25f;
+        ep.sweepMode = bb::SweepMode::Bounce;
+        const auto bounce = engineNote (ep, 72, 1.2, 1.3);
+        const double b1 = noteAt (bounce, 0.25, 1024), b2 = noteAt (bounce, 0.5, 1024), b3 = noteAt (bounce, 0.75, 1024);
+        res.check (std::abs (b1 - 60.0) < 1.0 && std::abs (b2 - 72.0) < 1.0 && std::abs (b3 - 60.0) < 1.0,
+                   "SWEEP BOUNCE: down and back up, over and over (siren)",
+                   String (b1, 1) + " / " + String (b2, 1) + " / " + String (b3, 1));
+
+        // Vibrato shapes: TRILL only ever plays the note and 2 semitones up; RANDOM wanders
+        ep.sweepAmt = 0.0f;
+        ep.vibDepth = 1.0f;
+        ep.vibRate = 4.0f;
+        ep.vibDelay = 0.0f;
+        auto notesSeen = [&] (const AudioBuffer<float>& b)
+        {
+            std::vector<double> seen;
+            for (double t = 0.2; t < 1.4; t += 0.02)
+                seen.push_back (noteAt (b, t, 512));
+            return seen;
+        };
+        ep.vibShape = bb::VibShape::Trill;
+        int low = 0, high = 0, between = 0;
+        for (double n : notesSeen (engineNote (ep, 69, 1.5, 1.5)))
+            (std::abs (n - 69.0) < 0.3 ? low : (std::abs (n - 71.0) < 0.3 ? high : between))++;
+        res.check (low > 10 && high > 10 && between <= 6, "VIB TRILL: jumps between A and B (VIBRATO 1.0 = 2 semitones)",
+                   String (low) + " x A, " + String (high) + " x B, " + String (between) + " in between (edges)");
+
+        ep.vibShape = bb::VibShape::Random;
+        const auto wobbly = notesSeen (engineNote (ep, 69, 1.5, 1.5));
+        const auto [mn, mx] = std::minmax_element (wobbly.begin(), wobbly.end());
+        res.check (*mx - *mn > 0.5 && *mn > 67.7 && *mx < 70.3, "VIB RANDOM: wanders, but stays within VIBRATO",
+                   "range " + String (*mn, 2) + " .. " + String (*mx, 2));
+
+        // STEREO through the plugin (Wide = next side for each note, Swing = moves once a bar)
+        auto balance = [&] (const AudioBuffer<float>& b, double from, double to)   // > 1 = louder on the left
+        {
+            const int s0 = (int) (from * sr), n = (int) ((to - from) * sr);
+            return (double) b.getRMSLevel (0, s0, n) / jmax (1.0e-9, (double) b.getRMSLevel (1, s0, n));
+        };
+        selectProgram (*plugin, "Classic Square");
+        setParam (*plugin, "Stereo", 0.0f);
+        const auto middle = renderNotes (*plugin, { { 0.0, 0.4, 60, 0.8f }, { 0.5, 0.4, 64, 0.8f } }, 1.0, sr);
+        setParam (*plugin, "Stereo", 0.5f);
+        const auto wideOut = renderNotes (*plugin, { { 0.0, 0.4, 60, 0.8f }, { 0.5, 0.4, 64, 0.8f } }, 1.0, sr);
+        const double m1 = balance (middle, 0.05, 0.35), w1 = balance (wideOut, 0.05, 0.35), w2 = balance (wideOut, 0.55, 0.85);
+        res.check (std::abs (m1 - 1.0) < 1.0e-6 && ((w1 > 2.0 && w2 < 0.5) || (w1 < 0.5 && w2 > 2.0)),
+                   "STEREO WIDE: one note on each side (MIDDLE: both equal)",
+                   "middle L/R " + String (m1, 2) + ", wide " + String (w1, 2) + " then " + String (w2, 2));
+
+        selectProgram (*plugin, "Drum Kit");
+        setParam (*plugin, "Stereo", 0.5f);
+        const auto kit = renderNotes (*plugin, { { 0.0, 0.2, 36, 1.0f }, { 0.4, 0.2, 42, 1.0f } }, 0.8, sr);
+        const double kick = balance (kit, 0.0, 0.2), hat = balance (kit, 0.4, 0.45);
+        res.check (std::abs (kick - 1.0) < 0.01 && hat < 0.5, "STEREO WIDE drums: kick in the middle, hi-hat on the right",
+                   "kick L/R " + String (kick, 2) + ", hat " + String (hat, 2));
+
+        selectProgram (*plugin, "Classic Square");
+        setParam (*plugin, "Stereo", 1.0f);   // Swing, at the test's 120 BPM: one bar = 2 s
+        const auto swing = renderNotes (*plugin, { { 0.0, 2.1, 60, 0.8f } }, 2.2, sr);
+        const double s1 = balance (swing, 0.4, 0.6), s2 = balance (swing, 1.4, 1.6);
+        res.check (s1 < 0.3 && s2 > 3.0, "STEREO SWING: right, then left, once a bar",
+                   "L/R at 0.5 s " + String (s1, 2) + ", at 1.5 s " + String (s2, 2));
+        setParam (*plugin, "Stereo", 0.0f);
     }
 
     // ---- 4c. C64 filter -----------------------------------------------------
@@ -1521,7 +1636,8 @@ static int runFocusTest()
         const bool reset = panel->getDesignHeight() == fullHeight && boxVisible ("filter") && boxVisible ("play")
                         && panel->getBoxOrder()[0] == "sound";
 
-        res.check (fullHeight == 778 && hiddenByButton && shortHeight == 660 && std::abs (windowRatio - 1000.0 / 660.0) < 0.01
+        res.check (fullHeight == bb::MainPanel::fullHeight && hiddenByButton && shortHeight == fullHeight - 118   // the filter + play row
+                       && std::abs (windowRatio - 1000.0 / shortHeight) < 0.01
                        && savedHidden && movedFirst && reset,
                    "Boxes: hide (x button + VIEW), move, reset; window reshapes; layout saved",
                    "height " + String (fullHeight) + " -> " + String (shortHeight) + ", window ratio " + String (windowRatio, 3)

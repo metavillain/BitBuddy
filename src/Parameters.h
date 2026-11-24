@@ -37,6 +37,9 @@ inline constexpr const char* filterCutoff = "filterCutoff";
 inline constexpr const char* filterReso   = "filterReso";
 inline constexpr const char* filterEnv    = "filterEnv";
 inline constexpr const char* console      = "console";
+inline constexpr const char* sweepMode    = "sweepMode";
+inline constexpr const char* vibShape     = "vibShape";
+inline constexpr const char* stereo       = "stereo";
 } // namespace bb::ids
 
 namespace bb
@@ -52,6 +55,9 @@ juce::StringArray keyNames();
 juce::StringArray scaleNames();
 juce::StringArray filterTypeNames();
 juce::StringArray consoleNames();
+juce::StringArray sweepModeNames();
+juce::StringArray vibShapeNames();
+juce::StringArray stereoNames();
 
 /** Chord type index of "Smart" (follows Key + Scale) in arpChordNames(). */
 inline constexpr int kSmartChordIndex = 9;
