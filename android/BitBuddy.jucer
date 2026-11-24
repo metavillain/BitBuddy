@@ -36,6 +36,10 @@
       <FILE id="BbF016" name="Scales.h" compile="0" resource="0" file="../src/Scales.h"/>
       <FILE id="BbF017" name="JamBand.cpp" compile="1" resource="0" file="../src/JamBand.cpp"/>
       <FILE id="BbF018" name="JamBand.h" compile="0" resource="0" file="../src/JamBand.h"/>
+      <FILE id="BbF019" name="NotePlayer.cpp" compile="1" resource="0" file="../src/NotePlayer.cpp"/>
+      <FILE id="BbF020" name="NotePlayer.h" compile="0" resource="0" file="../src/NotePlayer.h"/>
+      <FILE id="BbF021" name="GameSounds.cpp" compile="1" resource="0" file="../src/GameSounds.cpp"/>
+      <FILE id="BbF022" name="GameSounds.h" compile="0" resource="0" file="../src/GameSounds.h"/>
     </GROUP>
     <GROUP id="BbG003" name="assets">
       <FILE id="BbFont" name="PressStart2P-Regular.ttf" compile="0" resource="1" file="../assets/PressStart2P-Regular.ttf"/>

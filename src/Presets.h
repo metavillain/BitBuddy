@@ -24,4 +24,8 @@ bool isSongSetting (const juce::String& paramId);
 
 /** Resets everything (except the song settings) to defaults, then applies the preset. */
 void applyPreset (juce::AudioProcessorValueTreeState&, int index);
+
+/** Same, for any list of values (parameter id -> real value): used by the
+    sound effect generator. */
+void applyValues (juce::AudioProcessorValueTreeState&, const std::vector<std::pair<const char*, float>>& values);
 } // namespace bb

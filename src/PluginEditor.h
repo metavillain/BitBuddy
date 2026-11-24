@@ -160,6 +160,24 @@ private:
 };
 
 //==============================================================================
+/** 7. GAME SOUNDS (added in 1.2): a new sound effect in one tap, SAVE WAV, and jingles. */
+class GameSoundsBox : public Box
+{
+public:
+    explicit GameSoundsBox (BitBuddyProcessor&);
+    std::function<void (const juce::String&)> onMessage;   // shows a line in the help bar
+
+private:
+    void layoutContent (juce::Rectangle<int>) override;
+    void saveWav();
+
+    BitBuddyProcessor& proc;
+    juce::Label fxLabel, jingleLabel;
+    juce::OwnedArray<juce::TextButton> fxButtons, jingleButtons;
+    juce::TextButton againButton { "AGAIN" }, saveButton { "SAVE WAV" };
+    juce::ScopedMessageBox shareBox;
+};
+
 /** Retro green "screen" that shows the live waveform. */
 class Scope : public juce::Component, public juce::SettableTooltipClient
 {
@@ -337,7 +355,7 @@ private:
 class MainPanel : public juce::Component, private juce::Timer
 {
 public:
-    static constexpr int baseWidth = 1000, fullHeight = 800;
+    static constexpr int baseWidth = 1000, fullHeight = 902;
 
     MainPanel (BitBuddyProcessor&, RetroLookAndFeel&);
     ~MainPanel() override;
@@ -453,6 +471,7 @@ private:
 
     // 6. C64 filter
     FilterBox filterBox;
+    GameSoundsBox gameBox;
 
     // play along: Scale Lock
     juce::ComboBox keyBox, scaleBox;

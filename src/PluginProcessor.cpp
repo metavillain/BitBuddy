@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "Parameters.h"
 #include "Presets.h"
+#include "GameSounds.h"
 
 namespace
 {
@@ -251,6 +252,7 @@ bool BitBuddyProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
 
 void BitBuddyProcessor::prepareToPlay (double sampleRate, int)
 {
+    renderRate = sampleRate > 0.0 ? sampleRate : 44100.0;
     engine.prepare (sampleRate);
     for (auto& f : fx)
         f.prepare (sampleRate);
@@ -323,7 +325,7 @@ void BitBuddyProcessor::updateEngineParams (double bpm)
     stereoMode   = idx (pStereo, 2);
     ep.wide      = stereoMode == 1;
     engine.setParams (ep);
-    swingStep = 1.0 / (4.0 * secondsPerBeat * (getSampleRate() > 0.0 ? getSampleRate() : 44100.0));   // one bar: side to side and back
+    swingStep = 1.0 / (4.0 * secondsPerBeat * renderRate);   // one bar: side to side and back
     for (auto& f : fx)
     {
         f.tone.setConsole ((int) ep.console);
@@ -379,6 +381,8 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     // Merge notes played on the on-screen keyboard
     keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
+    // ...and sound effects / jingles / songs started from the UI
+    notePlayer.addEvents (midi, nullptr, numSamples, renderRate);
 
     // Re-read the settings only when a knob, drawing, macro or the DAW tempo changed
     const double tempo = hostTempo();
@@ -727,6 +731,88 @@ void BitBuddyProcessor::randomize()
     clearMacros();   // a fresh sound starts without macros
     customName = "Surprise #" + juce::String (++randomCount);
     userPresetLoaded = false;
+}
+
+//==============================================================================
+void BitBuddyProcessor::makeSoundEffect (int type)
+{
+    juce::Random rng;
+    type = juce::jlimit (0, bb::kNumSfx - 1, type);
+    const auto sound = bb::makeSoundEffect ((bb::Sfx) type, rng);
+    bb::applyValues (apvts, sound.values);
+    clearMacros();
+    sfxNote = sound.note;
+    sfxLength = sound.length;
+    const juce::String kind (bb::sfxName (type));   // "POWER-UP" -> "Power-up #4"
+    customName = kind.substring (0, 1) + kind.substring (1).toLowerCase() + " #" + juce::String (++randomCount);
+    userPresetLoaded = false;
+    playSoundEffect();
+}
+
+void BitBuddyProcessor::playSoundEffect()
+{
+    notePlayer.play ({ { 0.0, sfxLength, sfxNote, 0.9f } });
+}
+
+void BitBuddyProcessor::playJingle (int type)
+{
+    juce::Random rng;
+    notePlayer.play (bb::makeJingle ((bb::Jingle) juce::jlimit (0, bb::kNumJingles - 1, type),
+                                     idxOf (pScaleKey, 11), (bb::Scale) idxOf (pScale, bb::kNumScales - 1),
+                                     lastTempo, rng));
+}
+
+juce::File BitBuddyProcessor::getSoundsFolder()
+{
+    return bb::Recorder::getRecordingsFolder().getSiblingFile ("BitBuddy Sounds");
+}
+
+bool BitBuddyProcessor::renderSoundToWav (const juce::File& file)
+{
+    // A private copy of BitBuddy with this exact sound, played offline (as fast as the computer can)
+    constexpr double sr = 44100.0;
+    constexpr int block = 512;
+    BitBuddyProcessor copy;
+    juce::MemoryBlock state;
+    getStateInformation (state);
+    copy.setStateInformation (state.getData(), (int) state.getSize());
+    copy.setPlayConfigDetails (0, 2, sr, block);
+    copy.prepareToPlay (sr, block);
+
+    // The note, then its release and echo, until 0.3 s of silence (at most 8 s)
+    juce::AudioBuffer<float> out (2, (int) (sr * 8.0));
+    out.clear();
+    juce::AudioBuffer<float> buffer (2, block);
+    const int noteOff = juce::jmax (1, (int) (sfxLength * sr));
+    int pos = 0, lastSound = 0;
+    while (pos + block <= out.getNumSamples())
+    {
+        juce::MidiBuffer midi;
+        if (pos == 0)
+            midi.addEvent (juce::MidiMessage::noteOn (1, sfxNote, 0.9f), 0);
+        if (noteOff >= pos && noteOff < pos + block)
+            midi.addEvent (juce::MidiMessage::noteOff (1, sfxNote), noteOff - pos);
+        copy.processBlock (buffer, midi);
+        for (int ch = 0; ch < 2; ++ch)
+            out.copyFrom (ch, pos, buffer, ch, 0, block);
+        if (buffer.getMagnitude (0, block) > 1.0e-4f)   // -80 dB
+            lastSound = pos + block;
+        pos += block;
+        if (pos > noteOff && pos - lastSound > (int) (0.3 * sr))
+            break;
+    }
+
+    const int length = juce::jmax (block, lastSound + (int) (0.02 * sr));
+    file.getParentDirectory().createDirectory();
+    file.deleteFile();
+    std::unique_ptr<juce::OutputStream> stream (file.createOutputStream());
+    if (stream == nullptr)
+        return false;
+    juce::WavAudioFormat wav;
+    auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}.withSampleRate (sr)
+                                                                              .withNumChannels (2)
+                                                                              .withBitsPerSample (16));
+    return writer != nullptr && writer->writeFromAudioSampleBuffer (out, 0, juce::jmin (length, out.getNumSamples()));
 }
 
 void BitBuddyProcessor::rollSection (Section section)

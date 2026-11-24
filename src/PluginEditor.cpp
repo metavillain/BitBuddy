@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "Parameters.h"
+#include "GameSounds.h"
 #include "Presets.h"
 #include "Scales.h"
 
@@ -422,6 +423,87 @@ void FilterBox::layoutContent (juce::Rectangle<int> area)
     const int w = area.getWidth() / 3;
     for (auto* k : { &cutoff, &reso, &env })
         k->setBounds (area.removeFromLeft (w));
+}
+
+//==============================================================================
+GameSoundsBox::GameSoundsBox (BitBuddyProcessor& p)
+    : Box ("game", "7", "GAME SOUNDS  (SOUND FX + JINGLES)", pal::yellow, 980, 96), proc (p)
+{
+    for (auto* l : { &fxLabel, &jingleLabel })
+    {
+        l->setFont (pixelFont (8.0f));
+        l->setColour (juce::Label::textColourId, accent);
+        addAndMakeVisible (l);
+    }
+    fxLabel.setText ("NEW FX:", juce::dontSendNotification);
+    jingleLabel.setText ("JINGLES:", juce::dontSendNotification);
+
+    for (int i = 0; i < kNumSfx; ++i)
+    {
+        auto* b = fxButtons.add (new juce::TextButton (sfxName (i)));
+        b->setTooltip (juce::String (sfxHint (i)) + "  (It becomes your sound: tweak it, SAVE it, or SAVE WAV for your game.)");
+        b->setColour (juce::TextButton::buttonColourId, pal::navy);
+        b->onClick = [this, i] { proc.makeSoundEffect (i); };
+        addAndMakeVisible (b);
+    }
+    for (int i = 0; i < kNumJingles; ++i)
+    {
+        auto* b = jingleButtons.add (new juce::TextButton (jingleName (i)));
+        b->setTooltip (jingleHint (i));
+        b->setColour (juce::TextButton::buttonColourId, pal::purple);
+        b->onClick = [this, i] { proc.playJingle (i); };
+        addAndMakeVisible (b);
+    }
+
+    againButton.setTooltip ("AGAIN: plays the current sound like a sound effect again (the same note, just as long).");
+    againButton.onClick = [this] { proc.playSoundEffect(); };
+    saveButton.setTooltip ("SAVE WAV: saves the current sound effect as a WAV file - ready for your own game! "
+                           "(Folder: " + BitBuddyProcessor::getSoundsFolder().getFullPathName() + ")");
+    saveButton.setColour (juce::TextButton::buttonColourId, pal::green);
+    saveButton.onClick = [this] { saveWav(); };
+    for (auto* b : { &againButton, &saveButton })
+        addAndMakeVisible (b);
+}
+
+void GameSoundsBox::layoutContent (juce::Rectangle<int> area)
+{
+    area = area.reduced (2, 4);
+    auto row1 = area.removeFromTop (26);
+    area.removeFromTop (6);
+    auto row2 = area.removeFromTop (26);
+
+    fxLabel.setBounds (row1.removeFromLeft (84));
+    const int fxWidth = row1.getWidth() / kNumSfx;
+    for (auto* b : fxButtons)
+        b->setBounds (row1.removeFromLeft (fxWidth).reduced (2, 0));
+
+    againButton.setBounds (row2.removeFromLeft (84).reduced (2, 0));
+    saveButton.setBounds (row2.removeFromLeft (110).reduced (2, 0));
+    row2.removeFromLeft (16);
+    jingleLabel.setBounds (row2.removeFromLeft (96));
+    const int jWidth = row2.getWidth() / kNumJingles;
+    for (auto* b : jingleButtons)
+        b->setBounds (row2.removeFromLeft (jWidth).reduced (2, 0));
+}
+
+void GameSoundsBox::saveWav()
+{
+    const auto name = juce::File::createLegalFileName (proc.getDisplayPresetName().removeCharacters ("*#").trim());
+    const auto file = BitBuddyProcessor::getSoundsFolder()
+                          .getNonexistentChildFile (name.isEmpty() ? "BitBuddy sound" : name, ".wav", true);
+    if (! proc.renderSoundToWav (file))
+    {
+        if (onMessage != nullptr)
+            onMessage ("Couldn't save the WAV in " + file.getParentDirectory().getFullPathName());
+        return;
+    }
+    if (onMessage != nullptr)
+        onMessage ("Saved " + file.getFileName() + "  in  " + file.getParentDirectory().getFullPathName());
+   #if JUCE_CONTENT_SHARING && (JUCE_IOS || JUCE_ANDROID)
+    shareBox = juce::ContentSharer::shareFilesScoped ({ juce::URL (file) }, [] (bool, const juce::String&) {}, this);
+   #else
+    file.revealToUser();
+   #endif
 }
 
 //==============================================================================
@@ -1390,6 +1472,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
                                   pal::sky)),
       volume       (state, ids::volume,       "VOLUME",  pal::sky, "VOLUME: the overall loudness of BitBuddy."),
       filterBox (p.apvts),
+      gameBox (p),
       keyboard (p.keyboardState)
 {
     // --- header ---
@@ -1723,7 +1806,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     filterBox.setDice   ([this] { proc.rollSection (Section::Filter); });
 
     // Boxes can be hidden (their "x") and moved (drag the title bar)
-    allBoxes = { &soundBox, &screenBox, &shapeBox, &chordsBox, &movementBox, &crunchBox, &filterBox, &playBox };
+    allBoxes = { &soundBox, &screenBox, &shapeBox, &chordsBox, &movementBox, &crunchBox, &filterBox, &playBox, &gameBox };
     for (auto* box : allBoxes)
     {
         box->onHide = [this] (Box& b) { setBoxVisible (b.getId(), false); };
@@ -1751,6 +1834,7 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
         addAndMakeVisible (box);
     }
     loadLayout();
+    gameBox.onMessage = [this] (const juce::String& text) { hintLabel.setText (text, juce::dontSendNotification); };
 
     // --- bottom ---
     hintLabel.setFont (textFont (15.0f));
@@ -1940,7 +2024,7 @@ namespace
 {
 juce::StringArray defaultBoxOrder()
 {
-    return { "sound", "screen", "shape", "chords", "movement", "crunch", "filter", "play" };
+    return { "sound", "screen", "shape", "chords", "movement", "crunch", "filter", "play", "game" };
 }
 } // namespace
 
@@ -2095,7 +2179,8 @@ bool MainPanel::isBoxChangingSound (const juce::String& id) const
     if (id == "chords")   return juce::roundToInt (value (ids::arpMode)) != 0;
     if (id == "movement") return value (ids::vibDepth) > 0.0f || std::abs (value (ids::sweepAmt)) > 0.5f || value (ids::pwm) > 0.0f
                               || value (ids::glide) >= 0.001f || juce::roundToInt (value (ids::voiceMode)) == 1;
-    if (id == "crunch")   return value (ids::echoMix) > 0.0f || value (ids::rate) < 44000.0f || value (ids::bits) <= 6.0f;
+    if (id == "crunch")   return value (ids::echoMix) > 0.0f || value (ids::rate) < 44000.0f || value (ids::bits) <= 6.0f
+                              || juce::roundToInt (value (ids::stereo)) != 0;
     if (id == "filter")   return juce::roundToInt (value (ids::filterType)) != 0;
     if (id == "play")     return juce::roundToInt (value (ids::scale)) != 0 || proc.isJamOn();
     if (id == "screen")   return proc.anyMacroOn();   // macros live on the SCREEN

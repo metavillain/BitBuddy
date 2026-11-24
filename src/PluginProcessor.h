@@ -9,6 +9,7 @@
 #include "ChipEngine.h"
 #include "Effects.h"
 #include "JamBand.h"
+#include "NotePlayer.h"
 #include "Recorder.h"
 
 // Lock-free ring buffer so the UI "screen" can show the live waveform.
@@ -147,6 +148,23 @@ public:
     void setJamTempo (float bpm) noexcept  { jamTempo = juce::jlimit (40.0f, 240.0f, bpm); }
     float getJamTempo() const noexcept     { return jamTempo; }
 
+    //==========================================================================
+    // GAME SOUNDS (added in 1.2)
+    /** A brand new sound effect of this kind (bb::Sfx), played once straight away. */
+    void makeSoundEffect (int type);
+    /** Plays the current sound the way the last sound effect was played (its note + length). */
+    void playSoundEffect();
+    /** Renders the current sound (one sound-effect note) into a WAV file. Works from
+        the UI thread while BitBuddy keeps playing (it uses its own copy). */
+    bool renderSoundToWav (const juce::File&);
+    /** Where SAVE WAV puts sounds: Music (computers) or Documents (phones) / "BitBuddy Sounds". */
+    static juce::File getSoundsFolder();
+    /** A new jingle (bb::Jingle) in your Key + Scale, played with the current sound. */
+    void playJingle (int type);
+
+    /** Plays scheduled notes: sound effects, jingles (and in the app, MIDI songs). */
+    bb::NotePlayer notePlayer;
+
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;   // on-screen keyboard -> synth
     ScopeBuffer scope;
@@ -169,6 +187,7 @@ private:
     float echoMix = 0.0f, echoFeedback = 0.0f;
     bool echoWasOn = false, filterWasOn = false, wideWasOn = false;
     int stereoMode = 0;          // 0 Middle, 1 Wide, 2 Swing
+    double renderRate = 44100.0; // the sample rate prepareToPlay was given
     double swingPhase = 0.0, swingStep = 0.0;   // Swing: once from side to side per bar
     std::array<int, 64> filterTriggers {};   // sample positions of this block's new notes
     int numFilterTriggers = 0;
@@ -199,6 +218,8 @@ private:
     juce::String customName;
     bool userPresetLoaded = false;
     int randomCount = 0;
+    int sfxNote = 72;
+    double sfxLength = 0.4;
 
     std::atomic<float>* pWave = nullptr;
     std::atomic<float>* pAttack = nullptr;

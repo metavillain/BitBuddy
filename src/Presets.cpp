@@ -166,9 +166,12 @@ bool isSongSetting (const juce::String& paramId)
 void applyPreset (juce::AudioProcessorValueTreeState& apvts, int index)
 {
     const auto& presets = factoryPresets();
-    if (index < 0 || index >= (int) presets.size())
-        return;
+    if (index >= 0 && index < (int) presets.size())
+        applyValues (apvts, presets[(size_t) index].values);
+}
 
+void applyValues (juce::AudioProcessorValueTreeState& apvts, const std::vector<std::pair<const char*, float>>& values)
+{
     // 1. Reset every parameter to its default - except the ones that belong to
     //    your song rather than to the sound: volume and the Key / Scale you play in
     for (auto* p : apvts.processor.getParameters())
@@ -176,8 +179,8 @@ void applyPreset (juce::AudioProcessorValueTreeState& apvts, int index)
             if (! isSongSetting (rp->getParameterID()))
                 rp->setValueNotifyingHost (rp->getDefaultValue());
 
-    // 2. Apply this preset's values
-    for (const auto& [id, value] : presets[(size_t) index].values)
+    // 2. Apply the new values
+    for (const auto& [id, value] : values)
         if (auto* rp = apvts.getParameter (id))
             rp->setValueNotifyingHost (rp->convertTo0to1 (value));
 }

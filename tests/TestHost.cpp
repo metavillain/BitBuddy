@@ -13,6 +13,7 @@
 #include "../src/PluginProcessor.h"
 #include "../src/PluginEditor.h"
 #include "../src/Presets.h"
+#include "../src/GameSounds.h"
 
 #include <chrono>
 #include <functional>
@@ -1173,6 +1174,123 @@ static int runTests (const String& path)
                        + ", A4 = " + String (hz, 2) + " Hz");
     }
 
+    // ---- 12. 1.2: game sounds (sound FX, SAVE WAV, jingles, note player) -----------
+    std::cout << "\n  -- game sounds --\n";
+    {
+        BitBuddyProcessor proc;
+        auto get = [&] (const char* id) { auto* p = proc.apvts.getParameter (id); return p->convertFrom0to1 (p->getValue()); };
+
+        // Runs BitBuddy's own processor (whatever its note player plays), optionally calling `during` at a time
+        auto run = [&] (double seconds, double callAt = -1.0, std::function<void()> during = nullptr)
+        {
+            proc.prepareToPlay (sr, 512);
+            AudioBuffer<float> result (2, (int) (seconds * sr)), blk (2, 512);
+            result.clear();
+            for (int pos = 0; pos + 512 <= result.getNumSamples(); pos += 512)
+            {
+                if (during != nullptr && callAt >= 0.0 && pos <= (int) (callAt * sr) && (int) (callAt * sr) < pos + 512)
+                    during();
+                MidiBuffer midi;
+                blk.clear();
+                proc.processBlock (blk, midi);
+                for (int ch = 0; ch < 2; ++ch)
+                    result.copyFrom (ch, pos, blk, ch, 0, 512);
+            }
+            return result;
+        };
+
+        // Every kind makes a sound that fits it, plays straight away, then goes quiet
+        String detail;
+        bool allOk = true;
+        for (int type = 0; type < bb::kNumSfx; ++type)
+        {
+            proc.makeSoundEffect (type);
+            const auto out = run (3.0);
+            const float peak = peakOf (out, 0.0, 0.5, sr), tail = peakOf (out, 2.9, 3.0, sr);
+            const float sweep = get ("sweepAmt");
+            const bool fits = type == (int) bb::Sfx::Jump  ? sweep < 0.0f
+                            : type == (int) bb::Sfx::Laser ? sweep >= 24.0f
+                            : type == (int) bb::Sfx::Coin  ? roundToInt (get ("arpMode")) == 1
+                            : type == (int) bb::Sfx::Bomb  ? roundToInt (get ("sweepMode")) == 1 && sweep > 0.0f
+                            : type == (int) bb::Sfx::Boom  ? roundToInt (get ("wave")) == 5
+                            : true;
+            const bool named = proc.getDisplayPresetName().startsWithIgnoreCase (String (bb::sfxName (type)).substring (0, 3));
+            const bool ok = allFinite (out) && peak > 0.02f && peak < 1.0f && tail < 1.0e-4f && fits && named;
+            allOk = allOk && ok;
+            detail << bb::sfxName (type) << (ok ? " ok  " : " FAILED  ");
+        }
+        res.check (allOk, "SOUND FX: all 8 kinds sound right, play at once, then stop", detail);
+
+        // Every tap is a new sound
+        proc.makeSoundEffect ((int) bb::Sfx::Laser);
+        const auto first = std::make_tuple (get ("wave"), get ("sweepAmt"), get ("sweepTime"), get ("decay"));
+        proc.makeSoundEffect ((int) bb::Sfx::Laser);
+        const auto second = std::make_tuple (get ("wave"), get ("sweepAmt"), get ("sweepTime"), get ("decay"));
+        res.check (first != second, "SOUND FX: tapping again makes a different one", proc.getDisplayPresetName());
+
+        // SAVE WAV: just the sound, from its first moment until it has died away
+        proc.makeSoundEffect ((int) bb::Sfx::Coin);
+        const auto wavFile = File::getSpecialLocation (File::tempDirectory).getChildFile ("bitbuddy-test-sfx.wav");
+        const bool saved = proc.renderSoundToWav (wavFile);
+        double wavSeconds = 0.0;
+        float wavPeak = 0.0f, wavStart = 0.0f, wavEnd = 1.0f;
+        {
+            WavAudioFormat wav;
+            if (auto reader = std::unique_ptr<AudioFormatReader> (wav.createReaderFor (wavFile.createInputStream().release(), true)))
+            {
+                AudioBuffer<float> b (2, (int) reader->lengthInSamples);
+                reader->read (&b, 0, b.getNumSamples(), 0, true, true);
+                wavSeconds = (double) b.getNumSamples() / reader->sampleRate;
+                wavPeak = b.getMagnitude (0, b.getNumSamples());
+                wavStart = b.getMagnitude (0, jmin (b.getNumSamples(), 441));   // the first 10 ms
+                wavEnd = b.getMagnitude (b.getNumSamples() - 441, 441);         // the last 10 ms
+            }
+        }
+        wavFile.deleteFile();
+        res.check (saved && wavSeconds > 0.2 && wavSeconds < 3.0 && wavPeak > 0.05f && wavStart > 0.01f && wavEnd < 1.0e-3f,
+                   "SAVE WAV: the sound effect, starting at once, ending when it fades",
+                   String (wavSeconds, 2) + " s, peak " + String (wavPeak, 2) + ", start " + String (wavStart, 3)
+                       + ", end " + String (wavEnd, 5));
+
+        // Jingles: in your key + scale, the right shape, and they play
+        Random rng (42);
+        bool inKey = true, shapes = true;
+        for (int i = 0; i < 40; ++i)
+        {
+            const auto type = (bb::Jingle) (i % bb::kNumJingles);
+            const auto notes = bb::makeJingle (type, 9, bb::Scale::Minor, 140.0, rng);   // A minor
+            for (const auto& n : notes)
+                inKey = inKey && bb::inScale (n.note, 9, bb::Scale::Minor) && n.start >= 0.0 && n.start < 4.0;
+            const int firstNote = notes.front().note, lastNote = notes.back().note;
+            if (type == bb::Jingle::GameOver) shapes = shapes && lastNote < firstNote;   // goes down
+            if (type == bb::Jingle::GotItem)  shapes = shapes && lastNote > firstNote;   // goes up
+            shapes = shapes && notes.size() >= 4;
+        }
+        proc.selectPreset (0);
+        int played = 0;
+        for (int type = 0; type < bb::kNumJingles; ++type)
+        {
+            proc.playJingle (type);
+            const auto out = run (4.5);
+            played += (peakOf (out, 0.0, 1.0, sr) > 0.05f && peakOf (out, 4.3, 4.5, sr) < 1.0e-4f && ! proc.notePlayer.isPlaying()) ? 1 : 0;
+        }
+        res.check (inKey && shapes && played == bb::kNumJingles, "JINGLES: in your KEY + SCALE, right shape, all 4 play and end",
+                   String (inKey ? "in key" : "OUT OF KEY") + ", " + (shapes ? "shapes ok" : "SHAPE WRONG") + ", "
+                       + String (played) + "/4 played");
+
+        // Stopping (or starting something else) never leaves a note hanging
+        proc.selectPreset (programIndex (proc, "Classic Square"));   // short release, no echo
+        proc.notePlayer.play ({ { 0.0, 3.0, 60, 0.8f }, { 0.0, 3.0, 64, 0.8f } });
+        const auto stopped = run (2.0, 0.5, [&] { proc.notePlayer.stop(); });
+        proc.notePlayer.play ({ { 0.0, 3.0, 60, 0.8f } });
+        const auto replaced = run (2.0, 0.5, [&] { proc.notePlayer.play ({ { 0.0, 0.1, 72, 0.8f } }); });
+        res.check (peakOf (stopped, 0.3, 0.5, sr) > 0.05f && peakOf (stopped, 1.8, 2.0, sr) < 1.0e-4f
+                       && peakOf (replaced, 1.8, 2.0, sr) < 1.0e-4f,
+                   "NOTE PLAYER: stop / replace releases every note (none stuck)",
+                   "after stop " + String (Decibels::gainToDecibels (peakOf (stopped, 1.8, 2.0, sr)), 1) + " dB, after replace "
+                       + String (Decibels::gainToDecibels (peakOf (replaced, 1.8, 2.0, sr)), 1) + " dB");
+    }
+
     std::cout << "\n  " << res.passed << " passed, " << res.failed << " failed\n";
     return res.failed;
 }
@@ -1699,6 +1817,8 @@ static int runFocusTest()
         { "MONO button",           findButton (*editor, "MONO") },
         { "next-preset button",    findButton (*editor, ">") },
         { "SURPRISE ME! button",   findButton (*editor, "SURPRISE ME!") },
+        { "COIN button",           findButton (*editor, "COIN") },
+        { "LEVEL CLEAR button",    findButton (*editor, "LEVEL CLEAR") },
     };
 
     for (const auto& [what, target] : targets)
@@ -1710,6 +1830,10 @@ static int runFocusTest()
         }
         clickOn (*peer, *editor, *target);
         res.check (piano->hasKeyboardFocus (false), String ("Keys still work after clicking ") + what, "");
+
+        if (String (what).contains ("COIN"))
+            res.check (proc.getDisplayPresetName().startsWith ("Coin #"), "Simulated click on COIN made a new coin sound",
+                       proc.getDisplayPresetName());
 
         if (String (what).contains ("SAW"))   // prove the simulated clicks really land
             res.check (roundToInt (proc.apvts.getRawParameterValue ("wave")->load()) == 4,

@@ -26,6 +26,8 @@ juce_add_binary_data(BitBuddyData SOURCES assets/PressStart2P-Regular.ttf)
 set(BITBUDDY_SOURCES
     src/ChipEngine.cpp
     src/JamBand.cpp
+    src/NotePlayer.cpp
+    src/GameSounds.cpp
     src/Parameters.cpp
     src/Presets.cpp
     src/PluginProcessor.cpp
