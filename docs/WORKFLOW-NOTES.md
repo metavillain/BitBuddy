@@ -63,6 +63,9 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 52 | MIDI SONGS (arranger + song band), window opens <= 90% of the screen | 104/104 | – |
 | 53 | Phone tricks: slide-to-bend, shake, tilt (Android Java listener via JUCE, iOS CoreMotion) | 105/105, focus 16/16; **emulator shake test PASS in CI** | the remembered MIDI pitch bend leaked across restarts - the 1.0 bug again, caught by the same tests |
 | 54 | Cleanup + mutation tests (9 bugs planted, 9 caught) + docs | – | restoring a mutated file with its old timestamp made MSBuild keep the mutant (§4) |
+| 55 | **User feedback: pasting a sound code gave no feedback** -> SHARE opens a box: live check ("Found: Siren" / typo / newer version), LOAD only when valid, LOADED! + a test note; copy shows the code | focus 17/17 (paste box test), 105/105 | text boxes report changes asynchronously: tests must pump the message loop |
+| 56 | **v1.2.0 released**: tested commit pushed to `main` (fast-forward) + tagged, without switching branches (Play work kept uncommitted until then) | release run | a second run on the same branch was cancelled while the first was still cancelling (`concurrency` group); the watcher re-ran it |
+| 57 | User: "available on the Google Play store?" -> researched current rules (API 36 since Aug 2026, 12 testers x 14 days for new personal accounts, 16 KB pages by Feb 2027), then built the Play kit on branch `play-store` | – | store screenshots first showed the *plugin* UI and an all-black feature graphic (Direct2D draws when the `Graphics` is destroyed) |
 
 ---
 
@@ -103,6 +106,9 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
 
 18. **Feature menus: check every idea against what already exists before showing it.** 1.2's list offered
     "wobble + pitch sweep", which BitBuddy had since 1.0. A 2-minute grep of the parameter list first.
+20. **App stores: which ones, and whose developer account?** Google Play needs the owner's account ($25,
+    ID check, 12 testers for 14 days), an upload key only they hold, a privacy policy and a public contact
+    email. Ask before 1.0 if a store is likely: it changes signing (a stable key from day one) and permissions.
 19. **Microphone / sensors: OK to ask for permissions?** Mic features add a permission prompt (phones, Mac);
     state when it appears (only on first use) before building.
 
@@ -255,6 +261,10 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
   the app build, `BB_STANDALONE_HOLDER=1`) -> switch the device's input on, add an extra
   `AudioIODeviceCallback`, restore the old setup afterwards. Include JUCE's processor/utils/gui_extra
   headers before `juce_StandaloneFilterWindow.h`.
+- **CI signed every Android build with a new throwaway key**, so installing a newer GitHub APK over an older
+  one failed ("App not installed"). A stable upload key (GitHub secret) fixes updates and is what Play needs.
+- **Images drawn with `Graphics` on Windows (Direct2D) are only finished when the `Graphics` is destroyed:**
+  save them after its scope ends, or you save a black picture.
 - **Android sensors without Java files:** `JUCE_CORE_INCLUDE_JNI_HELPERS 1` (before the first JUCE
   include) + `AndroidInterfaceImplementer` + `CreateJavaInterface ("android/hardware/SensorEventListener")`.
   The emulator fakes motion: `adb emu sensor set acceleration x:y:z`.
