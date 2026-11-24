@@ -56,11 +56,7 @@ void JamBand::configureEngines() noexcept
     d.wave = Wave::Drums;
     drums.setParams (d);
 
-    EngineParams b;
-    b.wave = Wave::Triangle;
-    b.mono = true;
-    b.attack = 0.001f; b.decay = 0.25f; b.sustain = 0.85f; b.release = 0.04f;
-    bass.setParams (b);
+    bass.setParams (bandBassSound());
 
     EngineParams c;
     c.wave = Wave::Pulse25;

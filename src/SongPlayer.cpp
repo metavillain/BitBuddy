@@ -1,4 +1,5 @@
 #include "SongPlayer.h"
+#include "JamBand.h"
 
 #include <map>
 
@@ -122,11 +123,7 @@ void SongBand::prepare (double sampleRate)
     for (auto* e : { &bass, &chords, &drums })
         e->prepare (sampleRate);
 
-    EngineParams b;   // the same chip sounds as the JAM band
-    b.wave = Wave::Triangle;
-    b.mono = true;
-    b.attack = 0.001f; b.decay = 0.25f; b.sustain = 0.85f; b.release = 0.04f;
-    bass.setParams (b);
+    bass.setParams (bandBassSound());   // the same triangle bass as the JAM band
 
     EngineParams c;
     c.wave = Wave::Pulse25;

@@ -10,6 +10,16 @@
 namespace bb
 {
 constexpr int kNumJamStyles = 4;
+
+/** The band's bass: an NES-style triangle, one note at a time (JAM band + MIDI songs). */
+inline EngineParams bandBassSound()
+{
+    EngineParams b;
+    b.wave = Wave::Triangle;
+    b.mono = true;
+    b.attack = 0.001f; b.decay = 0.25f; b.sustain = 0.85f; b.release = 0.04f;
+    return b;
+}
 const char* jamStyleName (int style);      // "Adventure", "Dungeon", "Racing", "Chill"
 double jamStyleTempo (int style);          // its natural tempo (BPM)
 

@@ -304,6 +304,27 @@ struct Results
     }
 };
 
+// Runs BitBuddy's own processor with no incoming MIDI (it plays whatever its note player, on-screen
+// keyboard or hum tracker sends), optionally calling `during` once, `callAt` seconds in.
+static AudioBuffer<float> runOwn (BitBuddyProcessor& proc, double seconds, double sr,
+                                  double callAt = -1.0, const std::function<void()>& during = nullptr)
+{
+    proc.prepareToPlay (sr, 512);
+    AudioBuffer<float> result (2, (int) (seconds * sr)), blk (2, 512);
+    result.clear();
+    for (int pos = 0; pos + 512 <= result.getNumSamples(); pos += 512)
+    {
+        if (during != nullptr && callAt >= 0.0 && pos <= (int) (callAt * sr) && (int) (callAt * sr) < pos + 512)
+            during();
+        MidiBuffer midi;
+        blk.clear();
+        proc.processBlock (blk, midi);
+        for (int ch = 0; ch < 2; ++ch)
+            result.copyFrom (ch, pos, blk, ch, 0, 512);
+    }
+    return result;
+}
+
 static int runTests (const String& path)
 {
     constexpr double sr = 44100.0;
@@ -1189,20 +1210,7 @@ static int runTests (const String& path)
         // Runs BitBuddy's own processor (whatever its note player plays), optionally calling `during` at a time
         auto run = [&] (double seconds, double callAt = -1.0, std::function<void()> during = nullptr)
         {
-            proc.prepareToPlay (sr, 512);
-            AudioBuffer<float> result (2, (int) (seconds * sr)), blk (2, 512);
-            result.clear();
-            for (int pos = 0; pos + 512 <= result.getNumSamples(); pos += 512)
-            {
-                if (during != nullptr && callAt >= 0.0 && pos <= (int) (callAt * sr) && (int) (callAt * sr) < pos + 512)
-                    during();
-                MidiBuffer midi;
-                blk.clear();
-                proc.processBlock (blk, midi);
-                for (int ch = 0; ch < 2; ++ch)
-                    result.copyFrom (ch, pos, blk, ch, 0, 512);
-            }
-            return result;
+            return runOwn (proc, seconds, sr, callAt, during);
         };
 
         // Every kind makes a sound that fits it, plays straight away, then goes quiet
@@ -1439,18 +1447,8 @@ static int runTests (const String& path)
         proc.apvts.getParameter ("sustain")->setValueNotifyingHost (1.0f);
         auto play = [&] (int note, double holdSec, double seconds)
         {
-            proc.prepareToPlay (sr, 512);
             proc.notePlayer.play ({ { 0.0, holdSec, note, 0.9f } });
-            AudioBuffer<float> result (2, (int) (seconds * sr)), blk (2, 512);
-            result.clear();
-            for (int pos = 0; pos + 512 <= result.getNumSamples(); pos += 512)
-            {
-                MidiBuffer midi;
-                blk.clear();
-                proc.processBlock (blk, midi);
-                result.copyFrom (0, pos, blk, 0, 0, 512);
-            }
-            return result;
+            return runOwn (proc, seconds, sr);
         };
         const auto atC = play (60, 3.0, 3.0), atC5 = play (72, 3.0, 3.0);
         const double ownPitch = pitchAt (atC, 0.3, 4096, sr), octaveUp = pitchAt (atC5, 0.1, 4096, sr);
@@ -1558,20 +1556,7 @@ static int runTests (const String& path)
         auto procPtr = std::make_unique<BitBuddyProcessor>();   // (big: on the heap, like a DAW does)
         auto& proc = *procPtr;
         proc.selectPreset (0);
-        auto run = [&] (double seconds)
-        {
-            proc.prepareToPlay (sr, 512);
-            AudioBuffer<float> result (2, (int) (seconds * sr)), blk (2, 512);
-            result.clear();
-            for (int pos = 0; pos + 512 <= result.getNumSamples(); pos += 512)
-            {
-                MidiBuffer midi;
-                blk.clear();
-                proc.processBlock (blk, midi);
-                result.copyFrom (0, pos, blk, 0, 0, 512);
-            }
-            return result;
-        };
+        auto run = [&] (double seconds) { return runOwn (proc, seconds, sr); };
         proc.notePlayer.play (song.notes);
         const auto out = run (5.0);
         const float playingPeak = peakOf (out, 0.5, 3.5, sr), endPeak = peakOf (out, 4.8, 5.0, sr);
@@ -1599,18 +1584,8 @@ static int runTests (const String& path)
         proc.selectPreset (0);
         auto playA = [&]
         {
-            proc.prepareToPlay (sr, 512);
             proc.notePlayer.play ({ { 0.0, 1.5, 69, 0.8f } });
-            AudioBuffer<float> result (2, (int) (1.5 * sr)), blk (2, 512);
-            result.clear();
-            for (int pos = 0; pos + 512 <= result.getNumSamples(); pos += 512)
-            {
-                MidiBuffer midi;
-                blk.clear();
-                proc.processBlock (blk, midi);
-                result.copyFrom (0, pos, blk, 0, 0, 512);
-            }
-            return result;
+            return runOwn (proc, 1.5, sr);
         };
         proc.setTouchBend (2.0f);
         const double bent = pitchAt (playA(), 0.3, 8192, sr);

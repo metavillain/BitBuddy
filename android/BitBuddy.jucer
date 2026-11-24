@@ -9,7 +9,7 @@
   directly instead of a generated JuceHeader.h. CI does all of this:
   see .github/workflows/build.yml (job "android").
 -->
-<JUCERPROJECT id="BbDy8A" name="BitBuddy" projectType="audioplug" version="1.1.0"
+<JUCERPROJECT id="BbDy8A" name="BitBuddy" projectType="audioplug" version="1.2.0"
               companyName="BitBuddy Labs" companyCopyright="BitBuddy Labs" bundleIdentifier="com.bitbuddylabs.bitbuddy"
               pluginFormats="buildStandalone" pluginName="BitBuddy" pluginDesc="Easy chiptune / 8-bit synth"
               pluginManufacturerCode="Bbdl" pluginCode="Bbd1"
@@ -77,7 +77,7 @@
   </MODULES>
   <EXPORTFORMATS>
     <ANDROIDSTUDIO targetFolder="Builds/Android" androidMinimumSDK="24" androidTargetSDK="35"
-                   androidScreenOrientation="landscape" androidVersionCode="110" bigIcon="BbIcon"
+                   androidScreenOrientation="landscape" androidVersionCode="120" bigIcon="BbIcon"
                    microphonePermissionNeeded="1" androidInternetNeeded="0" androidExternalWriteNeeded="0"
                    androidEnableContentSharing="1"
                    androidReadMediaAudioPermission="0" androidReadMediaImagesPermission="0"
