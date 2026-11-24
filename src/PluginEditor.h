@@ -96,6 +96,7 @@ public:
     void mouseMove (const juce::MouseEvent&) override;
 
     void setDice (std::function<void()> rollSection);   // a dice in the corner re-rolls this section
+    void setDiceShown (bool shouldShow);                // VIEW > Show dice buttons
     const juce::String& getId() const noexcept    { return id; }
     const juce::String& getTitle() const noexcept { return title; }
     int getNaturalWidth() const noexcept          { return naturalWidth; }
@@ -116,6 +117,7 @@ private:
     DiceButton dice;
     HideButton hide;
     std::function<void()> onDice;
+    bool diceShown = true;
     bool dragging = false;
 };
 
@@ -384,6 +386,9 @@ public:
     bool isBottomStripDetached() const noexcept { return stripDetached; }
     int getFullDesignHeight() const noexcept    { return stripDetached ? designHeight - 4 + BottomStrip::designHeight : designHeight; }
     void setBoxDraggingEnabled (bool shouldBeEnabled) noexcept { boxDraggingEnabled = shouldBeEnabled; }
+    /** VIEW > Show dice buttons (saved, like the layout). */
+    void setDiceShown (bool shouldShow);
+    bool areDiceShown() const noexcept { return diceShown; }
 
 private:
     void layoutBoxes();
@@ -422,7 +427,11 @@ private:
     void showThemeMenu();
     juce::TextButton helpButton { "? HELP" }, viewButton { "VIEW" };
     juce::TextButton prevButton { "<" }, nextButton { ">" };
-    juce::TextButton saveButton { "SAVE" }, mutateButton { "MUTATE" };
+    juce::TextButton saveButton { "SAVE" }, mutateButton { "MUTATE" }, shareButton { "SHARE" };
+    void showShareMenu();
+    void askForSoundCode();
+    void showHint (const juce::String& text);
+    juce::ScopedMessageBox shareTextBox;
     juce::TextButton surpriseButton { "SURPRISE ME!" };
     juce::ComboBox presetBox;
     juce::Label presetTip;
@@ -494,7 +503,7 @@ private:
 
     juce::Label hintLabel;
     juce::Label keysStatus;
-    bool stripDetached = false, boxDraggingEnabled = true;
+    bool stripDetached = false, boxDraggingEnabled = true, diceShown = true;
     juce::String lastKeysStatus;
     ChipKeyboard keyboard;
     BottomStrip bottomStrip { hintLabel, keysStatus, keyboard };

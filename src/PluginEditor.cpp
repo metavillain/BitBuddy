@@ -284,7 +284,13 @@ Box::Box (const juce::String& boxId, const juce::String& numberText, const juce:
 void Box::setDice (std::function<void()> roll)
 {
     onDice = std::move (roll);
-    dice.setVisible (onDice != nullptr);
+    setDiceShown (diceShown);
+}
+
+void Box::setDiceShown (bool shouldShow)
+{
+    diceShown = shouldShow;
+    dice.setVisible (onDice != nullptr && diceShown);
     resized();
 }
 
@@ -295,7 +301,7 @@ void Box::paint (juce::Graphics& g)
 
 void Box::resized()
 {
-    const bool hasDice = onDice != nullptr;
+    const bool hasDice = onDice != nullptr && diceShown;
     dice.setBounds (getWidth() - 26, 5, 18, 18);
     hide.setBounds (getWidth() - (hasDice ? 46 : 26), 5, 18, 18);
     layoutContent (getLocalBounds().reduced (8, 6).withTrimmedTop (20));
@@ -1501,6 +1507,11 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
     mutateButton.setColour (juce::TextButton::buttonColourId, pal::blue);
     mutateButton.onClick = [this] { proc.mutate(); };
 
+    shareButton.setTooltip ("SHARE: turn your sound into a SOUND CODE - a line of text you can send to a friend. "
+                            "They PASTE it into their BitBuddy and get exactly your sound!");
+    shareButton.setColour (juce::TextButton::buttonColourId, pal::teal);
+    shareButton.onClick = [this] { showShareMenu(); };
+
     saveButton.setTooltip ("SAVE: keep the sound you made as one of your own presets (under MY PRESETS in the preset menu).");
     saveButton.setColour (juce::TextButton::buttonColourId, pal::green);
     saveButton.onClick = [this] { askToSavePreset(); };
@@ -1533,7 +1544,8 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
 
     for (auto* c : { (juce::Component*) &helpButton, (juce::Component*) &viewButton, (juce::Component*) &prevButton,
                      (juce::Component*) &nextButton, (juce::Component*) &saveButton, (juce::Component*) &mutateButton,
-                     (juce::Component*) &surpriseButton, (juce::Component*) &presetBox, (juce::Component*) &presetTip })
+                     (juce::Component*) &surpriseButton, (juce::Component*) &presetBox, (juce::Component*) &presetTip,
+                     (juce::Component*) &shareButton })
         addAndMakeVisible (c);
 
     // --- 1. pick a sound ---
@@ -1834,6 +1846,9 @@ MainPanel::MainPanel (BitBuddyProcessor& p, RetroLookAndFeel& lookAndFeel)
         addAndMakeVisible (box);
     }
     loadLayout();
+    diceShown = loadSetting ("showDice", "1") != "0";   // VIEW > Show dice buttons
+    for (auto* box : allBoxes)
+        box->setDiceShown (diceShown);
     gameBox.onMessage = [this] (const juce::String& text) { hintLabel.setText (text, juce::dontSendNotification); };
 
     // --- bottom ---
@@ -2003,16 +2018,17 @@ void MainPanel::setBottomStripDetached (bool shouldBeDetached)
 
 void MainPanel::resized()
 {
-    helpButton.setBounds (240, 12, 72, 30);
-    viewButton.setBounds (316, 12, 58, 30);
-    mascot.setBounds (378, 4, 48, 52);
-    prevButton.setBounds (430, 12, 30, 30);
-    presetBox.setBounds (464, 12, 206, 28);
-    nextButton.setBounds (674, 12, 30, 30);
-    saveButton.setBounds (710, 12, 62, 30);
-    mutateButton.setBounds (778, 12, 80, 30);
-    surpriseButton.setBounds (864, 12, 126, 30);
-    presetTip.setBounds (430, 42, 560, 18);
+    helpButton.setBounds (240, 12, 66, 30);
+    viewButton.setBounds (310, 12, 54, 30);
+    mascot.setBounds (366, 4, 46, 52);
+    prevButton.setBounds (414, 12, 28, 30);
+    presetBox.setBounds (446, 12, 180, 28);
+    nextButton.setBounds (630, 12, 28, 30);
+    shareButton.setBounds (662, 12, 64, 30);
+    saveButton.setBounds (730, 12, 56, 30);
+    mutateButton.setBounds (790, 12, 72, 30);
+    surpriseButton.setBounds (866, 12, 124, 30);
+    presetTip.setBounds (414, 42, 576, 18);
 
     layoutBoxes();
 }
@@ -2116,6 +2132,14 @@ void MainPanel::loadLayout()
             hiddenBoxes.addIfNotAlreadyThere (id);
 }
 
+void MainPanel::setDiceShown (bool shouldShow)
+{
+    diceShown = shouldShow;
+    for (auto* box : allBoxes)
+        box->setDiceShown (shouldShow);
+    saveSetting ("showDice", shouldShow ? "1" : "0");
+}
+
 void MainPanel::saveLayout() const
 {
     saveSetting ("boxOrder", boxOrder.joinIntoString (","));
@@ -2204,6 +2228,8 @@ void MainPanel::showViewMenu()
     menu.addItem (100, "SHOW ALL BOXES", ! hiddenBoxes.isEmpty());
     menu.addItem (101, "RESET LAYOUT (ORDER + ALL BOXES)");
     menu.addSeparator();
+    menu.addItem (103, "SHOW DICE BUTTONS (RE-ROLL ONE BOX)", true, diceShown);
+    menu.addSeparator();
     menu.addItem (102, "TIP: DRAG A BOX BY ITS TITLE TO MOVE IT", false);
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&viewButton),
@@ -2219,6 +2245,8 @@ void MainPanel::showViewMenu()
                             }
                             else if (result == 101)
                                 safe->resetLayout();
+                            else if (result == 103)
+                                safe->setDiceShown (! safe->diceShown);
                             else if (juce::isPositiveAndBelow (result - 1, (int) safe->allBoxes.size()))
                             {
                                 const auto& id = safe->allBoxes[(size_t) result - 1]->getId();
@@ -2424,6 +2452,75 @@ void MainPanel::refreshPresetBox()
         presetBox.addSeparator();
         presetBox.addItem ("Delete \"" + proc.getDisplayPresetName() + "\"...", kDeletePresetId);
     }
+}
+
+void MainPanel::showHint (const juce::String& text)
+{
+    hintLabel.setText (text, juce::dontSendNotification);
+}
+
+void MainPanel::showShareMenu()
+{
+    enum { copyCode = 1, sendCode, pasteCode };
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("SOUND CODES");
+    menu.addItem (copyCode, "Copy my sound code");
+   #if JUCE_CONTENT_SHARING && (JUCE_IOS || JUCE_ANDROID)
+    menu.addItem (sendCode, "Send my sound to a friend...");
+   #endif
+    menu.addItem (pasteCode, "Paste a sound code");
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (shareButton),
+                        [safe = juce::Component::SafePointer<MainPanel> (this)] (int result)
+                        {
+                            if (safe == nullptr || result == 0)
+                                return;
+                            auto& self = *safe;
+                            const auto code = self.proc.getSoundCode();
+                            if (result == copyCode)
+                            {
+                                juce::SystemClipboard::copyTextToClipboard (code);
+                                self.showHint ("Copied! Paste it into a message to a friend:  " + code);
+                            }
+                            else if (result == sendCode)
+                            {
+                               #if JUCE_CONTENT_SHARING && (JUCE_IOS || JUCE_ANDROID)
+                                self.shareTextBox = juce::ContentSharer::shareTextScoped (
+                                    "My BitBuddy sound \"" + self.proc.getDisplayPresetName().trimCharactersAtEnd (" *")
+                                        + "\" - open BitBuddy, press SHARE > Paste a sound code:\n" + code,
+                                    [] (bool, const juce::String&) {}, &self);
+                               #endif
+                            }
+                            else if (result == pasteCode)
+                            {
+                                // A code on the clipboard loads straight away; otherwise ask for one
+                                if (self.proc.loadSoundCode (juce::SystemClipboard::getTextFromClipboard()))
+                                    self.showHint ("Loaded \"" + self.proc.getDisplayPresetName() + "\" from the code!");
+                                else
+                                    self.askForSoundCode();
+                            }
+                        });
+}
+
+void MainPanel::askForSoundCode()
+{
+    auto* w = new juce::AlertWindow ("PASTE A SOUND CODE", "Paste the code your friend sent you (it starts with BB1-).",
+                                     juce::MessageBoxIconType::NoIcon);
+    w->addTextEditor ("code", {}, "Code:");
+    w->addButton ("LOAD", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("CANCEL", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    addAndMakeVisible (w);
+    w->setCentrePosition (getLocalBounds().getCentre());
+    w->enterModalState (true, juce::ModalCallbackFunction::create (
+        [safe = juce::Component::SafePointer<MainPanel> (this), w] (int result)
+        {
+            if (safe == nullptr || result != 1)
+                return;
+            if (safe->proc.loadSoundCode (w->getTextEditorContents ("code")))
+                safe->showHint ("Loaded \"" + safe->proc.getDisplayPresetName() + "\" from the code!");
+            else
+                safe->showHint ("That doesn't look like a BitBuddy sound code (they start with BB1-). Check it was copied whole.");
+        }), true);
 }
 
 void MainPanel::askToSavePreset()

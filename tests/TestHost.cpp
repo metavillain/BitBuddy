@@ -1205,8 +1205,8 @@ static int runTests (const String& path)
         for (int type = 0; type < bb::kNumSfx; ++type)
         {
             proc.makeSoundEffect (type);
-            const auto out = run (3.0);
-            const float peak = peakOf (out, 0.0, 0.5, sr), tail = peakOf (out, 2.9, 3.0, sr);
+            const auto out = run (5.0);   // (echo repeats can take a few seconds to die away)
+            const float peak = peakOf (out, 0.0, 0.5, sr), tail = peakOf (out, 4.9, 5.0, sr);
             const float sweep = get ("sweepAmt");
             const bool fits = type == (int) bb::Sfx::Jump  ? sweep < 0.0f
                             : type == (int) bb::Sfx::Laser ? sweep >= 24.0f
@@ -1217,7 +1217,9 @@ static int runTests (const String& path)
             const bool named = proc.getDisplayPresetName().startsWithIgnoreCase (String (bb::sfxName (type)).substring (0, 3));
             const bool ok = allFinite (out) && peak > 0.02f && peak < 1.0f && tail < 1.0e-4f && fits && named;
             allOk = allOk && ok;
-            detail << bb::sfxName (type) << (ok ? " ok  " : " FAILED  ");
+            detail << bb::sfxName (type) << (ok ? String (" ok  ")
+                                                : " FAILED (peak " + String (peak, 3) + ", tail " + String (tail, 6)
+                                                      + (fits ? "" : ", wrong kind") + (named ? "" : ", name") + ")  ");
         }
         res.check (allOk, "SOUND FX: all 8 kinds sound right, play at once, then stop", detail);
 
@@ -1289,6 +1291,75 @@ static int runTests (const String& path)
                    "NOTE PLAYER: stop / replace releases every note (none stuck)",
                    "after stop " + String (Decibels::gainToDecibels (peakOf (stopped, 1.8, 2.0, sr)), 1) + " dB, after replace "
                        + String (Decibels::gainToDecibels (peakOf (replaced, 1.8, 2.0, sr)), 1) + " dB");
+    }
+
+    // ---- 13. 1.2: sound codes ---------------------------------------------------
+    std::cout << "\n  -- sound codes --\n";
+    {
+        BitBuddyProcessor mine, friends;
+        auto setOn = [] (BitBuddyProcessor& p, const char* id, float v) { auto* prm = p.apvts.getParameter (id); prm->setValueNotifyingHost (prm->convertTo0to1 (v)); };
+        auto soundOf = [] (BitBuddyProcessor& p)
+        {
+            std::map<String, float> values;
+            for (auto* prm : p.getParameters())
+                if (auto* rp = dynamic_cast<RangedAudioParameter*> (prm))
+                    if (! bb::isSongSetting (rp->getParameterID()))
+                        values[rp->getParameterID()] = rp->getValue();
+            return values;
+        };
+
+        // My sound: a preset, mutated, with a drawing and a macro
+        mine.selectPreset (programIndex (mine, "Hero Lead"));
+        mine.mutate();
+        setOn (mine, "wave", 8.0f);
+        bb::CustomWave drawing {};
+        for (int i = 0; i < bb::kCustomWaveSteps; ++i)
+            drawing[(size_t) i] = (std::uint8_t) ((i * 7) % 16);
+        mine.setCustomWave (drawing);
+        bb::Macro arp;
+        BitBuddyProcessor::macroFromString ("3|0|0,4,7", arp);
+        mine.setMacro (bb::kMacroArp, arp);
+        const auto code = mine.getSoundCode();
+
+        // My friend plays in another key, scale and volume - those must stay theirs
+        setOn (friends, "scaleKey", 9.0f);
+        setOn (friends, "scale", 2.0f);
+        setOn (friends, "volume", -10.0f);
+        const auto friendSong = std::make_tuple (friends.apvts.getParameter ("scaleKey")->getValue(),
+                                                 friends.apvts.getParameter ("scale")->getValue(),
+                                                 friends.apvts.getParameter ("volume")->getValue());
+
+        // Pasted from a chat message, broken over two lines
+        const auto message = "hey try this one!  " + code.substring (0, 40) + "\n" + code.substring (40) + "  :)";
+        const bool loaded = friends.loadSoundCode (message);
+        bool same = true;
+        const auto a = soundOf (mine), b = soundOf (friends);
+        for (const auto& [id, v] : a)
+            same = same && std::abs (b.at (id) - v) <= 1.0f / 65535.0f;
+        const bool extras = friends.getCustomWave() == drawing
+                         && BitBuddyProcessor::macroToString (friends.getMacro (bb::kMacroArp)) == BitBuddyProcessor::macroToString (arp)
+                         && ! friends.getMacro (bb::kMacroVolume).isOn();
+        const bool songKept = friendSong == std::make_tuple (friends.apvts.getParameter ("scaleKey")->getValue(),
+                                                             friends.apvts.getParameter ("scale")->getValue(),
+                                                             friends.apvts.getParameter ("volume")->getValue());
+        res.check (loaded && same && extras && songKept && code.startsWith ("BB1-") && code.length() < 200,
+                   "SOUND CODE: same sound on another BitBuddy (drawing + macros too), their Key/Scale/volume stay",
+                   String (code.length()) + " characters, " + (same ? "knobs same" : "KNOBS DIFFER") + ", "
+                       + (extras ? "drawing + macros same" : "EXTRAS DIFFER: wave " + BitBuddyProcessor::customWaveToString (friends.getCustomWave())
+                                                               + " vs " + BitBuddyProcessor::customWaveToString (drawing) + ", arp "
+                                                               + BitBuddyProcessor::macroToString (friends.getMacro (bb::kMacroArp)) + " vs "
+                                                               + BitBuddyProcessor::macroToString (arp)) + ", " + (songKept ? "song kept" : "SONG CHANGED")
+                       + ", name \"" + friends.getDisplayPresetName() + "\"");
+
+        // A mistyped code (or any other text) is refused and changes nothing
+        auto typo = code;
+        const int at = code.length() / 2;
+        typo = typo.replaceSection (at, 1, typo[at] == 'A' ? "B" : "A");
+        BitBuddyProcessor fresh;
+        const auto before = soundOf (fresh);
+        const bool refused = ! fresh.loadSoundCode (typo) && ! fresh.loadSoundCode ("BB1-hello") && ! fresh.loadSoundCode ("no code here")
+                          && soundOf (fresh) == before;
+        res.check (refused, "SOUND CODE: a mistyped code is refused (the sound stays as it was)", typo.substring (0, 24) + "...");
     }
 
     std::cout << "\n  " << res.passed << " passed, " << res.failed << " failed\n";
@@ -1748,6 +1819,21 @@ static int runFocusTest()
         settle();
         auto* crunch = findComponent<bb::Box> (*panel, [] (bb::Box& box) { return box.getId() == "crunch"; });
         const bool movedFirst = panel->getBoxOrder()[0] == "crunch" && crunch != nullptr && crunch->getPosition() == Point<int> (10, 64);
+
+        // VIEW > Show dice buttons: hides every dice, remembered for next time
+        auto visibleDice = [&]
+        {
+            int n = 0;
+            forEachComponent (*panel, [&] (Component& c) { n += (dynamic_cast<bb::DiceButton*> (&c) != nullptr && c.isVisible()) ? 1 : 0; });
+            return n;
+        };
+        const int diceBefore = visibleDice();
+        panel->setDiceShown (false);
+        const bool diceHidden = visibleDice() == 0 && bb::loadSetting ("showDice", "1") == "0";
+        panel->setDiceShown (true);
+        const bool diceBack = visibleDice() == diceBefore && diceBefore >= 6;
+        res.check (diceHidden && diceBack, "VIEW > Show dice buttons: hides all dice, saved, comes back",
+                   String (diceBefore) + " dice -> " + (diceHidden ? "0 (saved)" : "STILL SHOWN") + " -> " + String (visibleDice()));
 
         panel->resetLayout();
         settle();

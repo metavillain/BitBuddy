@@ -40,6 +40,7 @@
       <FILE id="BbF020" name="NotePlayer.h" compile="0" resource="0" file="../src/NotePlayer.h"/>
       <FILE id="BbF021" name="GameSounds.cpp" compile="1" resource="0" file="../src/GameSounds.cpp"/>
       <FILE id="BbF022" name="GameSounds.h" compile="0" resource="0" file="../src/GameSounds.h"/>
+      <FILE id="BbF023" name="SoundCode.cpp" compile="1" resource="0" file="../src/SoundCode.cpp"/>
     </GROUP>
     <GROUP id="BbG003" name="assets">
       <FILE id="BbFont" name="PressStart2P-Regular.ttf" compile="0" resource="1" file="../assets/PressStart2P-Regular.ttf"/>

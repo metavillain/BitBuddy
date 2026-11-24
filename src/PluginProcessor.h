@@ -162,6 +162,13 @@ public:
     /** A new jingle (bb::Jingle) in your Key + Scale, played with the current sound. */
     void playJingle (int type);
 
+    //==========================================================================
+    // SOUND CODES (added in 1.2): a whole sound as a line of text to send to a friend
+    juce::String getSoundCode();
+    /** Finds a sound code anywhere in the text and loads it. Returns false (and
+        changes nothing) when there is no valid code. */
+    bool loadSoundCode (const juce::String& text);
+
     /** Plays scheduled notes: sound effects, jingles (and in the app, MIDI songs). */
     bb::NotePlayer notePlayer;
 

@@ -33,6 +33,7 @@ set(BITBUDDY_SOURCES
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/Recorder.cpp
+    src/SoundCode.cpp
     src/RetroLookAndFeel.cpp)
 
 # JUCE features BitBuddy never uses. Leaving them out keeps the binaries small.
