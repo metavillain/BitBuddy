@@ -261,6 +261,9 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
   the app build, `BB_STANDALONE_HOLDER=1`) -> switch the device's input on, add an extra
   `AudioIODeviceCallback`, restore the old setup afterwards. Include JUCE's processor/utils/gui_extra
   headers before `juce_StandaloneFilterWindow.h`.
+- **Maven Central's HTTP 429 came back a third time** (3 retries within 3 minutes all failed). Retrying
+  isn't a fix: CI now fetches Gradle downloads from Google's mirror of Maven Central first
+  (`maven-central.storage-download.googleapis.com/maven2`, an init script in `~/.gradle/init.d`).
 - **CI signed every Android build with a new throwaway key**, so installing a newer GitHub APK over an older
   one failed ("App not installed"). A stable upload key (GitHub secret) fixes updates and is what Play needs.
 - **Images drawn with `Graphics` on Windows (Direct2D) are only finished when the `Graphics` is destroyed:**

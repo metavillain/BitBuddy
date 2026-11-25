@@ -180,6 +180,20 @@ jobs:
             echo "::warning::No upload key in this repository's secrets: signed with a throwaway key (not for Google Play)"
           fi
 
+      # Maven Central rate-limits GitHub's shared machines (HTTP 429 "Too Many Requests"): fetch
+      # from Google's official mirror of Maven Central first (the same files); Maven Central itself
+      # stays as the fallback
+      - name: Gradle downloads via Google's Maven Central mirror
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/maven-central-mirror.gradle <<'EOF'
+          def mirror = 'https://maven-central.storage-download.googleapis.com/maven2/'
+          allprojects {
+              buildscript { repositories { maven { url = mirror } } }
+              repositories { maven { url = mirror } }
+          }
+          EOF
+
       - name: Build the APK + the Google Play bundle (.aab)
         working-directory: android/Builds/Android
         run: |
