@@ -516,8 +516,13 @@ void GameSoundsBox::saveWav()
 }
 
 //==============================================================================
-void VoiceView::refresh (const juce::String& status, float micLevel)
+void VoiceView::refresh (const juce::String& status, float micLevel, float playhead)
 {
+    if (playhead != playheadAt)
+    {
+        playheadAt = playhead;
+        repaint();
+    }
     if (voice.getVersion() != shownVersion || peaks.size() != (size_t) juce::jmax (1, getWidth()))
     {
         shownVersion = voice.getVersion();
@@ -549,6 +554,12 @@ void VoiceView::paint (juce::Graphics& g)
     for (size_t x = 0; x < peaks.size(); x += 2)   // chunky 2-pixel columns
         g.fillRect ((float) x, mid - peaks[x] * half, 2.0f, juce::jmax (1.0f, peaks[x] * half * 2.0f));
 
+    if (playheadAt >= 0.0f && statusText.isEmpty())   // PLAY: where it is
+    {
+        g.setColour (pal::white);
+        g.fillRect (area.getX() + area.getWidth() * playheadAt - 1.0f, area.getY() + 2.0f, 2.0f, area.getHeight() - 4.0f);
+    }
+
     if (statusText.isNotEmpty())
     {
         if (level > 0.0f)   // microphone level bar along the bottom
@@ -567,7 +578,8 @@ VoiceBox::VoiceBox (BitBuddyProcessor& p)
     : Box ("voice", "8", "YOUR VOICE  (VOICE WAVE + HUM)", pal::cyan, 370, 96), proc (p), view (p.getVoiceSample())
 {
     recButton.setTooltip ("REC VOICE: say or sing something short (up to 3 seconds) - BitBuddy turns it into the VOICE wave. "
-                          "Then play it on the keys: middle C = your own pitch. Try CHIP: NES for a crunchy 1-bit voice!");
+                          "Then play it on the keys: middle C = your own pitch and speed. PLAY = hear it just as you recorded it. "
+                          "Try CHIP: NES for a crunchy 1-bit voice!");
     recButton.setColour (juce::TextButton::buttonColourId, pal::red);
     recButton.onClick = [this] { toggleRecording(); };
 
@@ -588,6 +600,19 @@ VoiceBox::VoiceBox (BitBuddyProcessor& p)
     humButton.setClickingTogglesState (false);
     humButton.onClick = [this] { toggleHum(); };
 
+    playButton.setTooltip ("PLAY: hear your recording just as you recorded it - none of your sound's settings or effects. "
+                           "(The keys play it with your sound: the words stay in time, even with chords, sweeps and CHIP.)");
+    playButton.setColour (juce::TextButton::buttonColourId, pal::green);
+    playButton.onClick = [this]
+    {
+        const bool stop = playButton.getButtonText() == "STOP";
+        proc.playVoiceClean (! stop);
+        playButton.setButtonText (stop ? "PLAY" : "STOP");
+        pressedAt = stop ? 0 : juce::Time::getMillisecondCounter();
+        if (! stop)
+            say ("PLAY: your recording just as you recorded it. Play the keys to hear it with your sound!");
+    };
+
     view.setTooltip ("Your voice recording (the VOICE wave plays this).");
 
     appOnly.setFont (textFont (12.0f, true));
@@ -595,7 +620,7 @@ VoiceBox::VoiceBox (BitBuddyProcessor& p)
     appOnly.setText ("REC VOICE + HUM: in the BitBuddy app", juce::dontSendNotification);
 
     const bool hasMic = MicInput::isAvailable();
-    for (auto* c : { (juce::Component*) &loadButton, (juce::Component*) &aahButton, (juce::Component*) &view })
+    for (auto* c : { (juce::Component*) &loadButton, (juce::Component*) &aahButton, (juce::Component*) &playButton, (juce::Component*) &view })
         addAndMakeVisible (c);
     if (hasMic)
     {
@@ -619,7 +644,10 @@ void VoiceBox::layoutContent (juce::Rectangle<int> area)
     area = area.reduced (2, 4);
     auto row1 = area.removeFromTop (26);
     area.removeFromTop (6);
-    view.setBounds (area.removeFromTop (26));
+    auto row2 = area.removeFromTop (26);
+    playButton.setBounds (row2.removeFromLeft (62).reduced (2, 0));
+    row2.removeFromLeft (2);
+    view.setBounds (row2);
 
     if (MicInput::isAvailable())
     {
@@ -652,7 +680,12 @@ void VoiceBox::timerCallback()
         status = hz > 0.0f ? "HUM: " + juce::MidiMessage::getMidiNoteName (juce::roundToInt (69.0 + 12.0 * std::log2 (hz / 440.0)), true, true, 4)
                            : juce::String ("HUM: sing!");
     }
-    view.refresh (status, micUse != MicUse::None ? mic.getLevel() : 0.0f);
+    const float playhead = proc.getVoicePreviewPosition();
+    const bool justPressed = pressedAt != 0 && juce::Time::getMillisecondCounter() - pressedAt < 400;
+    if (playhead >= 0.0f)
+        pressedAt = 0;
+    playButton.setButtonText (playhead >= 0.0f || justPressed ? "STOP" : "PLAY");
+    view.refresh (status, micUse != MicUse::None ? mic.getLevel() : 0.0f, playhead);
 }
 
 void VoiceBox::stopMic()
@@ -714,7 +747,8 @@ void VoiceBox::finishRecording()
     if (proc.setVoiceRecording (audio, rate))
     {
         useVoice();
-        say ("Got it! That's your VOICE wave now - play it on the keys (middle C = your own pitch). Try CHIP: NES!");
+        say ("Got it! That's your VOICE wave now - play it on the keys (middle C = your own pitch), "
+             "or press PLAY to hear it just as you recorded it. Try CHIP: NES!");
     }
     else
     {

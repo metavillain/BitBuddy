@@ -15,8 +15,10 @@ namespace bb
 
     Stored the way old consoles did: 16,000 samples a second, 8 bits each, at
     most 3 seconds. It plays at its own pitch on middle C (note 60); other keys
-    play it faster or slower, like a tape. The UI writes it, the audio thread
-    reads it (each sample is an atomic, so a new recording never tears). */
+    play it faster or slower, like a tape. Arps, chords, sweeps, vibrato and
+    bends only change the pitch, so the words stay in time (ChipEngine::playVoice).
+    The UI writes it, the audio thread reads it (each sample is an atomic, so a
+    new recording never tears). */
 struct VoiceSample
 {
     static constexpr double rate = 16000.0;

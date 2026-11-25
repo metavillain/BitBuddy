@@ -29,7 +29,9 @@ text and pictures, [privacy policy](docs/PRIVACY.md)).
 - **10 chip sounds:** Square, Pulse 25%, Pulse 12.5%, 4-bit Triangle, Saw, LFSR Noise,
   "Metal" short-mode noise (tuned to your keys), a 12-piece synthesized **Drum Kit**, **DRAW**
   (draw your own 32-step, 4-bit wave like the Game Boy's wave channel) and **VOICE**: your own
-  recording played like the NES sample channel (1-bit "DPCM" on NES, 4-bit on Game Boy / C64)
+  recording played like the NES sample channel (1-bit "DPCM" on NES, 4-bit on Game Boy / C64);
+  chords, arps, sweeps and bends change its pitch but keep the words in time, and **PLAY** hears it
+  just as recorded
 - **Chip modes:** Modern, or real **NES / Game Boy / C64** behaviour (note limits, 4-bit volume steps,
   the chips' own pitch tables, on/off NES triangle, 16-speed NES noise, output tone)
 - **Magic Chords:** hold one key to get the classic fast-arpeggio chiptune chord
@@ -108,7 +110,7 @@ That one script builds everything (Release) and runs every check, writing report
 
 | Check | What it proves |
 |---|---|
-| Audio tests (`test-results.txt`) | 105 tests that load the real VST3 like a DAW: tuning, arpeggiators, drums, presets, save/restore, echo tails, limiter, Scale Lock, Smart chords, filter, chip modes, macros, drawn waves, Jam band, recording, My Presets, sweep modes, vibrato shapes, stereo, sound effects, SAVE WAV, jingles, sound codes, VOICE wave, HUM pitch tracking, MIDI songs, slide-to-bend, CPU |
+| Audio tests (`test-results.txt`) | 112 tests that load the real VST3 like a DAW: tuning, arpeggiators, drums, presets, save/restore, echo tails, limiter, Scale Lock, Smart chords, filter, chip modes, macros, drawn waves, Jam band, recording, My Presets, sweep modes, vibrato shapes, stereo, sound effects, SAVE WAV, jingles, sound codes, VOICE wave (incl. a speech-clarity score, STOI), HUM pitch tracking, MIDI songs, slide-to-bend, CPU |
 | Focus + layout test (`focus-test.txt`) | opens a real window, simulates clicks and a slide on a key, checks your computer keys keep playing; hides, moves and resets boxes; hides the dice; phone layout |
 | Benchmark (`benchmark.txt`) | CPU cost of chords, a lead, drums and idle |
 | [pluginval](https://github.com/Tracktion/pluginval) (`pluginval.txt`) | industry plugin validator at strictness level 10 |

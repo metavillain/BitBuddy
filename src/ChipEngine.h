@@ -100,6 +100,7 @@ struct EngineParams
 
     CustomWave customWave = defaultCustomWave();               // for Wave::Custom
     const VoiceSample* voice = nullptr;                        // for Wave::Voice
+    int voiceBits = 16;                                        // VOICE: CRUNCH's bits, used on the recording itself
     Console console = Console::Modern;
     std::array<Macro, kNumMacroLanes> macros {};
 
@@ -191,8 +192,17 @@ private:
 
         float gate = 0.0f;   // NES triangle: no volume control, just on / off (smoothed against clicks)
         float panL = 1.0f, panR = 1.0f;   // STEREO Wide: this note's side
-        int voiceIndex = -1;              // VOICE: the recording's sample now playing...
-        float voiceOut = 0.0f, dpcm = 0.0f;   // ...as the console plays it (NES: 1-bit delta steps)
+
+        // VOICE: the key you press sets how fast the words go (like a tape); arps, chords,
+        // sweeps, vibrato and bends only change the pitch. Two overlapping "grains" read the
+        // recording at the pitch you hear, starting over (at a silent moment of their window)
+        // from where the words are now.
+        double voicePos = 0.0, voiceStep = 0.0;   // where the words are, and how fast they go (recording samples)
+        double grainPos[2] = { 0.0, 0.0 };
+        float grainPhase = 0.0f;                  // grain 0's place in its window (grain 1 is half a window on)
+        float voiceHz = 261.6f;                   // the key that sets the speed of the words
+        float voiceOut = 0.0f, dpcm = 0.0f;       // what the console plays (NES: 1-bit delta steps)
+        double dpcmClock = 0.0;
 
         // instrument macros
         int macroFrame = 0;
@@ -213,7 +223,8 @@ private:
     void updateModulation (Voice&) noexcept;
     float oscillate (Voice&) noexcept;
     float playVoice (Voice&) noexcept;
-    static void restartVoiceSample (Voice& v) noexcept { v.phase = 0.0; v.voiceIndex = -1; v.dpcm = 0.0f; }
+    void restartVoiceSample (Voice&) noexcept;
+    float grainInc = 0.0005f;   // VOICE: grain window steps per sample (40 ms grains)
     float noiseStep (Voice&, double clockHz, bool shortMode) noexcept;
 
     void startVoice (Voice&, int note, float velocity);

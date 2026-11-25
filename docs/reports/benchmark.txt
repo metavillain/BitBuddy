@@ -1,7 +1,7 @@
 ﻿
 === CPU benchmark (60 s of audio, best of 3) ===
 
-  8-voice chords (PWM Strings)          115x real time  (0.866% of one core)
-  lead melody + echo (Hero Lead)        493x real time  (0.203% of one core)
-  drum pattern (Drum Kit)               464x real time  (0.216% of one core)
-  idle, no notes                       3646x real time  (0.027% of one core)
+  8-voice chords (PWM Strings)          112x real time  (0.890% of one core)
+  lead melody + echo (Hero Lead)        476x real time  (0.210% of one core)
+  drum pattern (Drum Kit)               491x real time  (0.204% of one core)
+  idle, no notes                       3740x real time  (0.027% of one core)

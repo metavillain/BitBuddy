@@ -1,6 +1,6 @@
-
+﻿
 === BitBuddy automated tests ===
-plugin: build/BitBuddy_artefacts/Release/VST3/BitBuddy.vst3
+plugin: C:\Claude\BitBuddy\build\BitBuddy_artefacts\Release\VST3\BitBuddy.vst3
 
   PASS  Plugin name                                 BitBuddy
   PASS  Accepts MIDI (instrument)                   yes
@@ -93,14 +93,14 @@ plugin: build/BitBuddy_artefacts/Release/VST3/BitBuddy.vst3
   PASS  Echo survives the silent gap after a note   gap -120 dB, echo -14.9 dB
   PASS  8-note chord at max volume stays below 0 dBFSpeak 0.9800
   PASS  Tweaked preset survives save + reload       2675 bytes; wave 0.333/0.333 attack 0.420/0.420 echo 0.330/0.330, program Hero Lead
-  PASS  CPU: 8-voice chords for 60 s                97x faster than real time (1.03% of one core)
-  PASS  CPU: idle (loaded, no notes) for 60 s       3698x faster than real time (0.027% of one core)
+  PASS  CPU: 8-voice chords for 60 s                90x faster than real time (1.12% of one core)
+  PASS  CPU: idle (loaded, no notes) for 60 s       3383x faster than real time (0.030% of one core)
 
   -- my presets, dice, mutate --
   PASS  MY PRESETS: save, reload (Key/Scale untouched), listedsaved, loaded, attack 0.50, echo 0.42, scale 5
   PASS  MY PRESETS: test preset removed again       C:\Users\enigmanaut\AppData\Roaming\BitBuddy\Presets
   PASS  DICE (shape): only the envelope changes, name gets *attack,decay,release,sustain | Hero Lead *
-  PASS  MUTATE: nudges many knobs a little, keeps wave/Key/Scale/volume18 params moved, biggest knob change 14% (3 mutates)
+  PASS  MUTATE: nudges many knobs a little, keeps wave/Key/Scale/volume19 params moved, biggest knob change 22% (3 mutates)
   PASS  MACRO ARP: 0 then +7 then loops (60 steps/s)57.0 64.0 57.0
   PASS  MACRO VOL: note cut to silence after 0.1 s (key still held)-14.4 dB -> -120.0 dB
   PASS  MACRO DUTY: 12.5% vs 50% pulse width        up 13% vs 50%
@@ -113,19 +113,26 @@ plugin: build/BitBuddy_artefacts/Release/VST3/BitBuddy.vst3
   -- game sounds --
   PASS  SOUND FX: all 8 kinds sound right, play at once, then stopCOIN ok  JUMP ok  LASER ok  HIT ok  BOOM ok  POWER-UP ok  BLIP ok  BOMB ok  
   PASS  SOUND FX: tapping again makes a different oneLaser #10
-  PASS  SAVE WAV: the sound effect, starting at once, ending when it fades0.50 s, peak 0.30, start 0.299, end 0.00000
+  PASS  SAVE WAV: the sound effect, starting at once, ending when it fades0.38 s, peak 0.20, start 0.199, end 0.00000
   PASS  JINGLES: in your KEY + SCALE, right shape, all 4 play and endin key, shapes ok, 4/4 played
   PASS  NOTE PLAYER: stop / replace releases every note (none stuck)after stop -100.0 dB, after replace -100.0 dB
 
   -- sound codes --
   PASS  SOUND CODE: same sound on another BitBuddy (drawing + macros too), their Key/Scale/volume stay138 characters, knobs same, drawing + macros same, song kept, name "Hero Lead (code)"
-  PASS  SOUND CODE: a mistyped code is refused (the sound stays as it was)BB1-AQlIZXJvIExlYWQfjeOe...
+  PASS  SOUND CODE: a mistyped code is refused (the sound stays as it was)BB1-AQlIZXJvIExlYWQfjeM5...
 
   -- your voice + hum --
   PASS  HUM: finds the pitch of a voice (98 Hz .. 784 Hz, within 15 cents)98->98.7 196->197.4 261.63->263.5 440->443.1 784->790.6 
   PASS  HUM: a sung A3 then E4 becomes notes A3, E4 (quick, steady, and they end)+A3@0.04 -A3@0.65 +E4@0.65 -E4@1.25 
-  PASS  VOICE: trimmed to the sound, own pitch on middle C, octave up on C5, ends with the recording1.06 s, C4 443.8 Hz, C5 875.2 Hz, after the end -100.0 dB (key still held)
-  PASS  VOICE + CHIP: Game Boy plays it in 16 levels, NES as 1-bit delta steps16 GB levels (Modern 239), NES differs by 0.122
+  PASS  VOICE: trimmed to the sound, own pitch on middle C, octave up on C5, ends with the recording1.06 s, C4 442.2 Hz, C5 878.1 Hz, after the end -100.0 dB (key still held)
+  PASS  VOICE + CHIP: Game Boy plays it in 16 levels, NES as 1-bit delta steps15 GB levels (Modern 3197), NES differs by 0.100
+  PASS  VOICE + Game Boy: room noise between words stays silentsilent
+  PASS  VOICE + CRUNCH 4-bit: quiet words keep their stepsa -22 dB word: -36.2 dB clean, -32.1 dB at 4 bits
+  PASS  VOICE: plays the whole recording while held (short DECAY, no SUSTAIN)start -14.6 dB, at 0.8 s -14.6 dB
+  PASS  VOICE: chords, arps, sirens, trills keep the words in timeMajor Chord Arp 1.01 s, Note Arpeggiator 1.02 s, Siren 1.01 s, Trill Lead 1.01 s, the sound ends at 1.01 s
+  PASS  VOICE > PLAY: the recording just as recorded (no sound, no effects), STOP stopsclarity 1.000, -13.9 dB, then quiet, stopped
+  PASS  VOICE: words stay clear on NES (1-bit) and with CRUNCH 4-bitNES 0.86, CRUNCH 4-bit 0.63 (Game Boy 4-bit 0.62)
+  PASS  VOICE: words stay clear through chords, arps, sirens, sweepsMajor Chord Arp 0.58, Note Arpeggiator 0.50, Siren 0.66, Coin Pickup 0.62, Trill Lead 0.94, Laser Zap 0.97
   PASS  VOICE: saved with the project, presets keep it, silence refused, 'aah' out of the boxproject ok, preset kept it, silence refused, default 1.20 s
 
   -- midi songs --
@@ -136,4 +143,4 @@ plugin: build/BitBuddy_artefacts/Release/VST3/BitBuddy.vst3
   -- slide to bend, tilt to wobble --
   PASS  SLIDE bends 2 semitones; TILT adds wobble; both let go cleanlybent 494.1 Hz, wobble 417.0..464.2 Hz, after 440.2 Hz
 
-  105 passed, 0 failed
+  112 passed, 0 failed

@@ -1,4 +1,12 @@
-## ✨ New in 1.2
+## ✨ New in 1.2.1
+
+- **Your voice stays clear:** on the keys, chords, arpeggios, sirens, sweeps, trills and bends now change
+  the *pitch* of your recording but keep the words in time (before, they sped the words up or restarted
+  them, which turned them into noise). The whole recording plays while you hold a key, the NES 1-bit
+  sound follows your voice much better, and CRUNCH no longer turns quiet sounds and room noise into crackle
+- **PLAY** in YOUR VOICE: hear your recording just as you recorded it, no settings or effects
+
+## New in 1.2
 
 - **Game sounds:** one tap makes a new COIN, JUMP, LASER, HIT, BOOM, POWER-UP, BLIP or BOMB -
   **SAVE WAV** for your own game - plus **jingles** (level clear, game over, got item, fanfare) in your key
@@ -58,8 +66,8 @@ takes you from zero to your first chiptune song.
 
 ## Tested on every build
 
-77 automated audio tests (tuning, arpeggios, Scale Lock, filter, chip modes, macros, Jam, recording,
-presets, save/reload, CPU) + a UI test that clicks through the real window ·
+112 automated audio tests (tuning, arpeggios, Scale Lock, filter, chip modes, macros, Jam, recording,
+presets, save/reload, voice clarity, CPU) + a UI test that clicks through the real window ·
 [pluginval](https://github.com/Tracktion/pluginval) at its strictest level ·
 Apple's `auval` Audio Unit validator on Mac.
 

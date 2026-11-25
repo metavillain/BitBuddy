@@ -187,7 +187,8 @@ class VoiceView : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     explicit VoiceView (const VoiceSample& sample) : voice (sample) {}
-    void refresh (const juce::String& status, float micLevel);
+    /** playhead: how far PLAY has got (0..1), or -1 */
+    void refresh (const juce::String& status, float micLevel, float playhead);
     void paint (juce::Graphics&) override;
 
 private:
@@ -195,7 +196,7 @@ private:
     std::vector<float> peaks;   // one per pixel column
     int shownVersion = -1;
     juce::String statusText;
-    float level = 0.0f;
+    float level = 0.0f, playheadAt = -1.0f;
 };
 
 /** 8. YOUR VOICE (added in 1.2): record or load a voice for the VOICE wave, and
@@ -225,6 +226,8 @@ private:
     std::vector<float> capture;          // REC VOICE: filled by the microphone thread...
     std::atomic<int> captured { 0 };     // ...this far
     juce::TextButton recButton { "REC VOICE" }, loadButton { "LOAD WAV" }, aahButton { "AAH" }, humButton { "HUM" };
+    juce::TextButton playButton { "PLAY" };   // the recording just as you recorded it
+    juce::uint32 pressedAt = 0;               // (STOP shows straight away, before the audio has started)
     juce::Label appOnly;
     VoiceView view;
     std::unique_ptr<juce::FileChooser> chooser;

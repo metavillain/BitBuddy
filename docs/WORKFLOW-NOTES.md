@@ -66,6 +66,9 @@ criteria, and a reusable checklist so the *next* audio-plugin project starts fas
 | 55 | **User feedback: pasting a sound code gave no feedback** -> SHARE opens a box: live check ("Found: Siren" / typo / newer version), LOAD only when valid, LOADED! + a test note; copy shows the code | focus 17/17 (paste box test), 105/105 | text boxes report changes asynchronously: tests must pump the message loop |
 | 56 | **v1.2.0 released**: tested commit pushed to `main` (fast-forward) + tagged, without switching branches (Play work kept uncommitted until then) | release run | a second run on the same branch was cancelled while the first was still cancelling (`concurrency` group); the watcher re-ran it |
 | 57 | User: "available on the Google Play store?" -> researched current rules (API 36 since Aug 2026, 12 testers x 14 days for new personal accounts, 16 KB pages by Feb 2027), then built the Play kit on branch `play-store` | – | store screenshots first showed the *plugin* UI and an all-black feature graphic (Direct2D draws when the `Graphics` is destroyed) |
+| 58 | **User feedback: "the voice needs a clean playback button, and the effects turn it into random noise"** -> can't listen, so measured: Windows text-to-speech sentences (+ noisy-mic versions) through every console and all 31 presets, scored with STOI (speech clarity, `tests/Intelligibility.h`, `--voice-check`) | before: arps / chords 0.2, sirens 0.2, coin / jump / laser 0.0-0.1, NES 0.82 | the cause wasn't the console crunch: VOICE played like a tape, so every pitch change also changed the speed of the words, and arp steps restarted them; DECAY/SUSTAIN cut words off; CRUNCH's bits worked on the quiet mix |
+| 59 | Fix: the key sets the speed of the words, everything else only the pitch (2 overlapping 30 ms grains, centred on the words); whole recording while held; NES delta at the real 33 kHz; 4-bit with a silence step; CRUNCH bits on the recording itself; **PLAY** (clean, after all effects) | after: arps / chords 0.7, sirens 0.72, coin 0.66, jump / laser 0.95+, explosion 0.85, NES 0.92; 112/112, focus 18/18 | a "chip-ready" compressed copy for 4-bit *lowered* the score: dropped (measure before keeping a clever idea) |
+| 60 | Mutation tests: 7 voice bugs planted (arp restarts, SUSTAIN cut, 4-bit hiss, silent PLAY, tape speed, CRUNCH on the mix, 16 kHz NES) | **7/7 caught**, + 1.2's batch re-run 5/5 | the first CRUNCH check (clarity *relative* to Game Boy) missed its mutant: replaced by a direct one (a -22 dB word must survive 4 bits); the UI PLAY test first failed on the real code because an earlier test's note was still queued - flush before measuring |
 
 ---
 
@@ -109,6 +112,9 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
 20. **App stores: which ones, and whose developer account?** Google Play needs the owner's account ($25,
     ID check, 12 testers for 14 days), an upload key only they hold, a privacy policy and a public contact
     email. Ask before 1.0 if a store is likely: it changes signing (a stable key from day one) and permissions.
+21. **Recordings: what should effects do to them - keep the words, or anything goes?** VOICE was built as a
+    tape (pitch = speed), which is authentic but turns words into noise under arps and sweeps. Asking "must
+    the words stay clear?" up front picks the design (pitch-shift grains) before the first build.
 19. **Microphone / sensors: OK to ask for permissions?** Mic features add a permission prompt (phones, Mac);
     state when it appears (only on first use) before building.
 
@@ -268,6 +274,16 @@ These would have removed guesswork or round-trips. Ask them in **one** message, 
   one failed ("App not installed"). A stable upload key (GitHub secret) fixes updates and is what Play needs.
 - **Images drawn with `Graphics` on Windows (Direct2D) are only finished when the `Graphics` is destroyed:**
   save them after its scope ends, or you save a black picture.
+- **Can't listen? Measure speech clarity.** STOI (compares 15 speech bands' loudness over 0.4 s windows)
+  turned "sounds like noise" into numbers per preset. Three traps: (1) judge against the *clean* speech,
+  not the noisy recording, or removing room noise counts as damage; (2) STOI skips frames 40 dB below
+  the loudest, so hiss in a *silent* pause is invisible to it - test that with its own check (Game Boy:
+  room noise must stay exactly 0); (3) it under-rates pitch-shifted speech people still understand, so
+  thresholds for arps / sirens are set relative to the old engine (old 0.0-0.2, new 0.5-0.97).
+- **Windows has free test speech:** `System.Speech.Synthesis.SpeechSynthesizer` -> `SetOutputToWaveFile`
+  (David, Zira voices). Used locally only; CI uses a pretend sentence made of formant-synth syllables.
+- **A user who opened the build-folder app locks `BitBuddy.exe`** (LNK1104). Don't close it for them:
+  build the other targets, rebuild the app when they're done.
 - **Android sensors without Java files:** `JUCE_CORE_INCLUDE_JNI_HELPERS 1` (before the first JUCE
   include) + `AndroidInterfaceImplementer` + `CreateJavaInterface ("android/hardware/SensorEventListener")`.
   The emulator fakes motion: `adb emu sensor set acceleration x:y:z`.
@@ -297,6 +313,7 @@ JUCE's VST3 hosting, exactly like a DAW, renders offline and measures the audio.
 | Limiter | 8-note chord, vel 127, volume +6 dB → peak < 1.0 |
 | Project save/restore | tweak a preset, save, load another, restore → tweaks + program name survive |
 | CPU | 8-voice chords for 60 s → must be > 20× real time (measured ~85–93×, ≈1.1% of a core) |
+| VOICE clarity (1.2.1) | STOI of the pretend sentence: NES > 0.79, CRUNCH 4-bit within 0.05 of Game Boy, chord arp >= 0.45, note arp >= 0.4, siren >= 0.5, coin >= 0.45, trill >= 0.85, laser >= 0.85; PLAY = the recording (STOI > 0.99) whatever the sound, STOP silences; Game Boy room noise = exactly 0; words end on time (+-40 ms) with arps, sirens, trills; short DECAY + no SUSTAIN still plays the whole recording |
 
 **Layer 2: pluginval** (Tracktion, open source) at `--strictness-level 10`: 25 groups (open cold/warm,
 programs, editor, editor-while-processing, processing at many rates/blocks, state restoration,
@@ -347,6 +364,8 @@ For instruments, add an interaction test for the main play loop from day one.
 | 1.1 mutation | **2 / 2 caught** | |
 | 1.2 (all features + cleanup) | **105 / 105**, focus + layout + phone 16/16, 0 warnings, CI 4/4 incl. emulator shake | `docs/reports/` |
 | 1.2 mutation | **9 / 9 caught** | TRILL, WIDE, code checksum, HUM timing, NES voice, stuck notes, songs + Scale Lock, BOMB, voice trim |
+| 1.2.1 voice clarity | **112 / 112**, focus 18/18, speech clarity (STOI) per preset before -> after in §1 rows 58-59 | `--voice-check` |
+| 1.2.1 mutation | **7 / 7 caught** (+ 5/5 of 1.2's batch re-run) | arp restart, SUSTAIN, 4-bit hiss, PLAY, tape speed, CRUNCH on mix, NES rate |
 
 Root causes of the run-1 failures:
 

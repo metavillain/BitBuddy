@@ -172,6 +172,11 @@ public:
     void setVoiceSample (const std::vector<std::int8_t>&);
     void resetVoice()                                   { setVoiceSample (bb::defaultVoiceSample()); }
     const bb::VoiceSample& getVoiceSample() const noexcept { return voiceSample; }
+    /** PLAY (voice box): the recording just as it was recorded - none of the sound's settings,
+        no effects, only VOLUME. false = stop it. Any thread. */
+    void playVoiceClean (bool play) noexcept      { previewRequest = play ? 1 : 2; }
+    /** How far PLAY has got (0..1), or -1 when it isn't playing. */
+    float getVoicePreviewPosition() const noexcept { return previewPosition.load(); }
 
     //==========================================================================
     // SOUND CODES (added in 1.2): a whole sound as a line of text to send to a friend
@@ -238,6 +243,9 @@ private:
 
     std::array<std::atomic<std::uint8_t>, bb::kCustomWaveSteps> customWave {};   // UI writes, audio reads
     bb::VoiceSample voiceSample;                                                  // UI writes, audio reads
+    std::atomic<int> previewRequest { 0 };       // PLAY: UI -> audio (1 = from the start, 2 = stop)
+    std::atomic<float> previewPosition { -1.0f };   // ...audio -> UI
+    double previewPos = -1.0;                    // audio thread: where PLAY is in the recording (-1 = off)
 
     struct MacroStore
     {

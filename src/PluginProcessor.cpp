@@ -277,6 +277,8 @@ void BitBuddyProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     echoWasOn = filterWasOn = wideWasOn = false;
     swingPhase = 0.0;
     quietSamples = 0;
+    previewPos = -1.0;
+    previewPosition = -1.0f;
 
     outputGain.reset (sampleRate, 0.02);
     outputGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (pVolume->load()));
@@ -340,12 +342,16 @@ void BitBuddyProcessor::updateEngineParams (double bpm)
     ep.vibShape  = (bb::VibShape) idx (pVibShape, 2);
     stereoMode   = idx (pStereo, 2);
     ep.wide      = stereoMode == 1;
+    // VOICE: CRUNCH's bits work on the recording itself (as loud as it can be), not on the
+    // quieter mix - there they'd turn soft words and breaths into crackle
+    const int bits = (int) std::lround (pBits->load());
+    ep.voiceBits = ep.wave == bb::Wave::Voice ? bits : 16;
     engine.setParams (ep);
     swingStep = 1.0 / (4.0 * secondsPerBeat * renderRate);   // one bar: side to side and back
     for (auto& f : fx)
     {
         f.tone.setConsole ((int) ep.console);
-        f.crusher.setParams ((int) std::lround (pBits->load()), pRate->load());
+        f.crusher.setParams (ep.wave == bb::Wave::Voice ? 16 : bits, pRate->load());
         f.filter.setParams (idx (pFilterType, 3), pFilterCutoff->load(), pFilterReso->load(), pFilterEnv->load(),
                             pDecay->load());   // the filter envelope closes over the same DECAY time as the volume
     }
@@ -470,10 +476,21 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     }
     const float* band = bandBuffer.getReadPointer (0);
 
+    // PLAY (voice box): the recording just as it was recorded (mixed in after every effect)
+    if (const int request = previewRequest.exchange (0); request != 0)
+        previewPos = request == 1 ? 0.0 : -1.0;
+    const int voiceLength = voiceSample.getLength();
+    if (previewPos >= (double) voiceLength - 1.0)
+        previewPos = -1.0;   // over (or a new, shorter recording)
+    const bool usePreview = previewPos >= 0.0;
+    const double previewStep = bb::VoiceSample::rate / renderRate;
+    constexpr float previewGain = 0.3f;   // as loud as the VOICE wave on a key
+
     // 2. Nothing playing and every effect tail has died away? The cleared buffer
     //    is already the right answer, so an idle BitBuddy costs (almost) nothing.
-    if (! engineActive && effectsIdle && ! useJam && ! useBand)
+    if (! engineActive && effectsIdle && ! useJam && ! useBand && ! usePreview)
     {
+        previewPosition = -1.0f;
         outputGain.skip (numSamples);
         scope.pushSilence (numSamples);
         writeRecording (buffer, numSamples);   // keep the recording's timeline running
@@ -529,8 +546,24 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         const float xl = fx[0].process (mono[i], useFilter);
         const float xr = wide ? fx[1].process (right[i], useFilter) : xl;
 
+        float preview = 0.0f;
+        if (previewPos >= 0.0)
+        {
+            const int k = (int) previewPos;
+            if (k + 1 < voiceLength)
+            {
+                const float a = voiceSample.at (k), b = voiceSample.at (k + 1);
+                preview = previewGain * (a + (b - a) * (float) (previewPos - k));
+                previewPos += previewStep;
+            }
+            else
+            {
+                previewPos = -1.0;
+            }
+        }
+
         const float g = outputGain.getNextValue();
-        scope.push (0.5f * (xl + xr) * g);
+        scope.push ((0.5f * (xl + xr) + preview) * g);
 
         float l = xl, r = xr;
         if (useEcho)
@@ -548,8 +581,8 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             r *= juce::MathConstants<float>::sqrt2 * std::sin (angle);
         }
 
-        l *= g;
-        r *= g;
+        l = (l + preview) * g;
+        r = (r + preview) * g;
         if (useJam)
         {
             const float jamSample = jam.nextSample();
@@ -577,9 +610,11 @@ void BitBuddyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         }
     }
 
+    previewPosition = previewPos >= 0.0 ? (float) (previewPos / juce::jmax (1, voiceLength)) : -1.0f;
+
     // 4. Go idle once nothing has played for longer than the echo can still answer
     //    (echoes can arrive after a silent gap, so a single quiet block isn't enough)
-    if (! engineActive && peak < 1.0e-6f)
+    if (! engineActive && previewPos < 0.0 && peak < 1.0e-6f)
         quietSamples += numSamples;
     else
         quietSamples = 0;

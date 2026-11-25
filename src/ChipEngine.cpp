@@ -11,6 +11,12 @@ namespace
 constexpr float kVoiceGain = 0.3f;   // per-voice level, leaves headroom for chords
 constexpr float kPwmRate   = 2.5f;   // Hz, speed of the pulse-width wobble
 
+// VOICE
+constexpr double kVoiceGrainSeconds = 0.03;   // grains: long enough to keep a vowel, short enough to keep the words in time
+constexpr double kDpcmRate = 33143.9;         // the NES sample channel's fastest speed (steps a second)
+constexpr float kDpcmStep = 1.0f / 32.0f;     // ...and one step (2 of its 127 levels)
+constexpr double kMiddleC = 261.6255653;      // the key that plays a recording at its own speed
+
 // PolyBLEP: a tiny correction applied right at each jump of a square / saw
 // wave. It removes the harsh "aliasing" fizz digital square waves get on high
 // notes, while keeping the hard-edged chip character.
@@ -155,6 +161,7 @@ void ChipEngine::setParams (const EngineParams& np)
     glideCoeff  = glideOn ? (float) (1.0 - std::exp (-(double) kControlInterval / (p.glide * 0.25 * sr))) : 1.0f;
     arpStepSamples = std::max (16.0, p.arpStepSeconds * sr);
     macroStepSamples = sr / kMacroStepsPerSecond;
+    grainInc = (float) (1.0 / (kVoiceGrainSeconds * sr));
 
     anyMacroOn = false;
     for (auto& m : p.macros)
@@ -717,9 +724,7 @@ void ChipEngine::retrigger (Voice& v, int note)
     v.ctrlCountdown = 0;
     v.lfoPhase = 0.25;
     v.stage = Stage::Attack;   // restart from the current level -> no click
-    if (p.wave == Wave::Voice)
-        restartVoiceSample (v);
-    v.held = true;
+    v.held = true;             // (VOICE: the words carry on - only the pitch changes)
     restartMacros (v);
     lastNote = note;
 }
@@ -893,6 +898,9 @@ void ChipEngine::tickHeldArp() noexcept
 float ChipEngine::renderTone (Voice& v) noexcept
 {
     // --- Volume envelope (linear, like the chips' volume counters) ---
+    // VOICE plays the whole recording while the key is down, like a console's sample
+    // channel (it had no volume control): DECAY + SUSTAIN would cut words off.
+    const float sustain = p.wave == Wave::Voice ? 1.0f : p.sustain;
     switch (v.stage)
     {
         case Stage::Attack:
@@ -901,10 +909,10 @@ float ChipEngine::renderTone (Voice& v) noexcept
             break;
         case Stage::Decay:
             v.env -= decayStep;
-            if (v.env <= p.sustain) { v.env = p.sustain; v.stage = Stage::Sustain; }
+            if (v.env <= sustain) { v.env = sustain; v.stage = Stage::Sustain; }
             break;
         case Stage::Sustain:
-            v.env = p.sustain;
+            v.env = sustain;
             break;
         case Stage::Release:
             v.env -= releaseStep;
@@ -1117,45 +1125,96 @@ float ChipEngine::oscillate (Voice& v) noexcept
     return out;
 }
 
+void ChipEngine::restartVoiceSample (Voice& v) noexcept
+{
+    // Middle C plays the recording at its own speed; other keys faster or slower (like a tape)
+    v.voiceHz = noteToHz ((float) v.note);
+    v.voiceStep = (double) v.voiceHz / kMiddleC * (VoiceSample::rate * invSr);
+    v.voicePos = v.grainPos[0] = v.grainPos[1] = 0.0;
+    v.grainPhase = 0.0f;
+    v.voiceOut = v.dpcm = 0.0f;
+    v.dpcmClock = 0.0;
+}
+
 float ChipEngine::playVoice (Voice& v) noexcept
 {
     const int length = p.voice != nullptr ? p.voice->getLength() : 0;
-    const int index = (int) v.phase;   // VOICE: phase counts samples of the recording
-    if (index >= length)
+    if (v.voicePos >= (double) length)
     {
-        // The recording is over, so the note is too (a quick fade, no click)
+        // The words are over, so the note is too (a quick fade, no click)
         if (v.stage != Stage::Release)
         {
             v.stage = Stage::Release;
             v.env = std::min (v.env, 0.02f);
         }
+        v.voiceOut *= 0.99f;
         return v.voiceOut;
     }
 
-    if (index != v.voiceIndex)
+    auto read = [&] (double pos) noexcept   // the recording, smoothly in between its samples
     {
-        v.voiceIndex = index;
-        const float x = p.voice->at (index);
-        switch (p.console)
-        {
-            case Console::NES:       // DPCM: a 1-bit delta - each sample the level can only step up or down
-                v.dpcm = std::clamp (v.dpcm + (x > v.dpcm ? 1.0f / 32.0f : -1.0f / 32.0f), -1.0f, 1.0f);
-                v.voiceOut = v.dpcm;
-                break;
-            case Console::GameBoy:   // 4-bit samples (the wave channel / the C64 volume trick)
-            case Console::C64:
-                v.voiceOut = std::round ((x + 1.0f) * 7.5f) / 7.5f - 1.0f;
-                break;
-            case Console::Modern:
-                v.voiceOut = x;
-                break;
-        }
+        const int i = (int) pos;
+        if (i >= length)
+            return 0.0f;
+        const float a = p.voice->at (i), b = i + 1 < length ? p.voice->at (i + 1) : 0.0f;
+        return a + (b - a) * (float) (pos - i);
+    };
+
+    // Two grains, each faded in and out (their windows always add up to exactly 1). At the
+    // key's own pitch both read right where the words are, so it's simply the recording.
+    const float ph = v.grainPhase;
+    const float bump = 16.0f * ph * (1.0f - ph);
+    const float s = bump / (5.0f - 0.25f * bump);   // sin (pi * phase), Bhaskara's formula
+    const float w0 = s * s;
+    float x = w0 * read (v.grainPos[0]) + (1.0f - w0) * read (v.grainPos[1]);
+
+    const double pitch = std::clamp ((double) v.hz / v.voiceHz, 1.0 / 16.0, 16.0);   // arps, sweeps, vibrato, bends
+    v.grainPos[0] += v.voiceStep * pitch;
+    v.grainPos[1] += v.voiceStep * pitch;
+    v.voicePos += v.voiceStep;
+    v.grainPhase += grainInc;
+    // A grain starts over (while it's silent) so that its middle lines up with the words:
+    // a higher pitch reads faster, so it starts a little earlier
+    const double grainStart = std::max (0.0, v.voicePos + (1.0 - pitch) * 0.5 * v.voiceStep / (double) grainInc);
+    if (v.grainPhase >= 1.0f)
+    {
+        v.grainPhase -= 1.0f;
+        v.grainPos[0] = grainStart;   // grain 0 is silent right now
+    }
+    else if (ph < 0.5f && v.grainPhase >= 0.5f)
+    {
+        v.grainPos[1] = grainStart;   // ...and grain 1, half a window later
     }
 
-    // Middle C plays the recording at its own speed; other keys faster or slower
-    constexpr double middleC = 261.6255653;
-    v.phase += (double) v.hz / middleC * (VoiceSample::rate * invSr);
-    return v.voiceOut;
+    // How each console plays a sample
+    switch (p.console)
+    {
+        case Console::NES:       // DPCM: 33,144 times a second the level steps up or down (1 bit each)
+            v.dpcmClock += kDpcmRate * invSr;
+            while (v.dpcmClock >= 1.0)
+            {
+                v.dpcmClock -= 1.0;
+                v.dpcm = std::clamp (v.dpcm + (x > v.dpcm ? kDpcmStep : -kDpcmStep), -1.0f, 1.0f);
+            }
+            x = v.dpcm;
+            break;
+        case Console::GameBoy:   // 4-bit samples (the wave channel / the C64 volume trick), with a true "silence" level
+        case Console::C64:
+            x = std::clamp (std::round (x * 7.5f), -8.0f, 7.0f) / 7.5f;   // (room noise between words stays silent)
+            break;
+        case Console::Modern:
+            break;
+    }
+
+    // CRUNCH's bits, on the recording itself: quiet words keep as many steps as loud ones would
+    if (p.voiceBits < 8)
+    {
+        const float steps = (float) (1 << (std::clamp (p.voiceBits, 1, 7) - 1));
+        x = std::clamp (std::round (x * steps), -steps, steps - 1.0f) / steps;
+    }
+
+    v.voiceOut = x;
+    return x;
 }
 
 // NES-style noise: a 15-bit linear-feedback shift register.

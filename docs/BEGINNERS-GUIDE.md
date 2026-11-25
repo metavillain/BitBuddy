@@ -159,7 +159,7 @@ your DAW.
 | **Jam / Style / Tempo** (app) | A backing band (drums, bass, chords) in your key |
 | **Rec** (app) | Records a WAV (sound) + MIDI (notes) of what you play |
 | **Game sounds: New FX / Again / Save WAV / Jingles** | A new sound effect in one tap, save it for your game, short tunes in your key |
-| **Your voice: Rec Voice / Load WAV / Aah / Hum** | Record or load the VOICE wave; HUM = sing and BitBuddy plays it (app) |
+| **Your voice: Rec Voice / Load WAV / Aah / Hum / Play** | Record or load the VOICE wave; PLAY = hear it as recorded; HUM = sing and BitBuddy plays it (app) |
 | **MIDI songs: Open MIDI / Play** (app) | Play any MIDI file the chiptune way |
 | **Share** | Copy your sound as a code, or paste a friend's code |
 | **Screen: Scope / Wave / Macros** | Watch the sound, draw your own wave, or draw macros |
@@ -238,6 +238,16 @@ each time in your KEY + SCALE, with your sound. In the app, press **REC** first 
 faster or slower. Set **CHIP** to **NES** for the crunchy 1-bit sound the NES used for voices and drum
 samples, or **Game Boy** for 4-bit. **LOAD WAV** uses any WAV file instead; **AAH** brings back the
 built-in sung "aah". (In a DAW, LOAD WAV works; REC VOICE and HUM are in the app.)
+
+- **PLAY** (next to the picture of your recording) plays it *just as you recorded it*: none of your
+  sound's settings, no effects. Press it again (**STOP**) to stop.
+- On the keys, the effects keep your words clear: chords, arpeggios, sirens, sweeps, trills and bends
+  change the *pitch* of your voice, but the words keep going at the speed of the key you pressed.
+  The whole recording plays while you hold the key (like a real console's sample channel, DECAY and
+  SUSTAIN don't cut it off), and CRUNCH's bits crunch the recording itself, so quiet sounds and the
+  room noise between words don't turn into crackle.
+- Sounds that send your voice *very* far up or down (Power Up, Falling Bomb) are meant to be wild -
+  pick a lead, bass or chord sound if you want to hear every word.
 
 **Hum to play (app).** Press **HUM** and hum or sing a tune: BitBuddy plays it with your sound. Turn on
 SCALE LOCK and every note lands in key. Use headphones so BitBuddy doesn't hear itself.

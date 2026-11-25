@@ -15,6 +15,7 @@
 #include "../src/Presets.h"
 #include "../src/GameSounds.h"
 #include "../src/SongPlayer.h"
+#include "Intelligibility.h"
 #include <set>
 
 #include <chrono>
@@ -324,6 +325,8 @@ static AudioBuffer<float> runOwn (BitBuddyProcessor& proc, double seconds, doubl
     }
     return result;
 }
+
+static AudioBuffer<float> pretendSpeech (double rate);   // (below: a pretend sentence for the voice tests)
 
 static int runTests (const String& path)
 {
@@ -1488,6 +1491,173 @@ static int runTests (const String& path)
                    String ((int) gbLevels.size()) + " GB levels (Modern " + String ((int) modernLevels.size()) + "), NES differs by "
                        + String (nesDiff / (double) nes.size(), 3));
 
+        // 1.2.1: Game Boy / C64 4-bit has a true "silence" step: room noise between words stays silent (no hiss)
+        {
+            bb::VoiceSample hiss;
+            std::vector<std::int8_t> quiet (8000);
+            Random rng (5);
+            for (auto& s : quiet)
+                s = (std::int8_t) (rng.nextInt (7) - 3);   // +-3 of 127: a quiet room
+            hiss.set (quiet);
+            bb::ChipEngine e;
+            e.prepare (sr);
+            bb::EngineParams ep;
+            ep.wave = bb::Wave::Voice;
+            ep.voice = &hiss;
+            ep.console = bb::Console::GameBoy;
+            ep.sustain = 1.0f;
+            e.setParams (ep);
+            std::vector<float> out (12000, 0.0f);
+            e.noteOn (60, 1.0f);
+            e.render (out.data(), (int) out.size());
+            float loudest = 0.0f;
+            for (auto x : out)
+                loudest = jmax (loudest, std::abs (x));
+            res.check (loudest == 0.0f, "VOICE + Game Boy: room noise between words stays silent",
+                       loudest == 0.0f ? String ("silent") : "hiss at " + String (Decibels::gainToDecibels (loudest), 1) + " dB");
+        }
+
+        // 1.2.1: CRUNCH's bits work on the recording itself, so quiet words keep their steps (on the quieter
+        // mix, 4 bits would round a -22 dB word away to silence)
+        {
+            auto loudQuiet = sing ({ { 440.0, 0.5 } }, 48000.0), quietPart = sing ({ { 440.0, 0.5 } }, 48000.0);
+            quietPart.applyGain (Decibels::decibelsToGain (-22.0f));
+            AudioBuffer<float> both (1, loudQuiet.getNumSamples() * 2);
+            both.copyFrom (0, 0, loudQuiet, 0, 0, loudQuiet.getNumSamples());
+            both.copyFrom (0, loudQuiet.getNumSamples(), quietPart, 0, 0, quietPart.getNumSamples());
+            auto crunchProcPtr = std::make_unique<BitBuddyProcessor>();
+            auto& cp = *crunchProcPtr;
+            cp.setVoiceRecording (both, 48000.0);
+            cp.selectPreset (programIndex (cp, "Classic Square"));
+            auto setC = [&] (const char* id, float value)
+            {
+                auto* prm = cp.apvts.getParameter (id);
+                prm->setValueNotifyingHost (prm->convertTo0to1 (value));
+            };
+            setC ("wave", (float) bb::Wave::Voice);
+            setC ("sustain", 1.0f);
+            auto quietLevel = [&] (int bits)
+            {
+                setC ("bits", (float) bits);
+                cp.notePlayer.play ({ { 0.0, 1.5, 60, 0.9f } });
+                return peakOf (runOwn (cp, 1.2, sr), 0.65, 0.9, sr);
+            };
+            const float clean = quietLevel (16), crunched = quietLevel (4);
+            res.check (crunched > 0.5f * clean, "VOICE + CRUNCH 4-bit: quiet words keep their steps",
+                       "a -22 dB word: " + String (Decibels::gainToDecibels (clean), 1) + " dB clean, "
+                           + String (Decibels::gainToDecibels (crunched), 1) + " dB at 4 bits");
+        }
+
+        // 1.2.1: the whole recording plays while the key is down, even with a short DECAY and no SUSTAIN
+        // (like a console's sample channel: no volume control, so words aren't cut off)
+        auto setP = [&] (const char* id, float value)
+        {
+            auto* prm = proc.apvts.getParameter (id);
+            prm->setValueNotifyingHost (prm->convertTo0to1 (value));
+        };
+        proc.selectPreset (programIndex (proc, "Classic Square"));
+        setP ("wave", (float) bb::Wave::Voice);
+        setP ("decay", 0.05f);
+        setP ("sustain", 0.0f);
+        const auto pluck = play (60, 3.0, 2.0);
+        const float early = peakOf (pluck, 0.05, 0.2, sr), late = peakOf (pluck, 0.7, 0.95, sr);
+        res.check (late > 0.6f * early, "VOICE: plays the whole recording while held (short DECAY, no SUSTAIN)",
+                   "start " + String (Decibels::gainToDecibels (early), 1) + " dB, at 0.8 s " + String (Decibels::gainToDecibels (late), 1) + " dB");
+
+        // 1.2.1: chords, arps and sweeps change only the pitch: the words end on time (and keep going)
+        auto lastSound = [&] (const AudioBuffer<float>& b)
+        {
+            for (int i = b.getNumSamples(); --i > 0;)
+                if (std::abs (b.getSample (0, i)) > 0.01f)
+                    return i / sr;
+            return 0.0;
+        };
+        String timingDetail;
+        bool onTime = true;
+        for (auto* preset : { "Major Chord Arp", "Note Arpeggiator", "Siren", "Trill Lead" })
+        {
+            proc.selectPreset (programIndex (proc, preset));
+            setP ("wave", (float) bb::Wave::Voice);
+            setP ("echoMix", 0.0f);
+            setP ("release", 0.01f);
+            const double ends = lastSound (play (60, 3.0, 2.0));
+            onTime = onTime && std::abs (ends - (voiceSeconds - 0.05)) < 0.04;   // (the recording keeps 50 ms after the sound)
+            timingDetail << preset << " " << String (ends, 2) << " s, ";
+        }
+        res.check (onTime, "VOICE: chords, arps, sirens, trills keep the words in time",
+                   timingDetail + "the sound ends at " + String (voiceSeconds - 0.05, 2) + " s");
+
+        // 1.2.1: the words stay clear (speech clarity score, tests/Intelligibility.h) on the
+        // pretend sentence: through the consoles, CRUNCH, chords, arps, sirens and sweeps
+        {
+            auto vpPtr = std::make_unique<BitBuddyProcessor>();
+            auto& vp = *vpPtr;
+            vp.setVoiceRecording (pretendSpeech (48000.0), 48000.0);
+            const auto stored = vp.getVoiceSample().get();
+            std::vector<float> clean (stored.size());
+            for (size_t i = 0; i < stored.size(); ++i)
+                clean[i] = stored[i] / 127.0f;
+            const double seconds = (double) stored.size() / bb::VoiceSample::rate;
+            auto setV = [&] (const char* id, float value)
+            {
+                auto* prm = vp.apvts.getParameter (id);
+                prm->setValueNotifyingHost (prm->convertTo0to1 (value));
+            };
+            auto monoOf = [] (const AudioBuffer<float>& b)
+            {
+                std::vector<float> m ((size_t) b.getNumSamples());
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                    m[(size_t) i] = 0.5f * (b.getSample (0, i) + b.getSample (1, i));
+                return m;
+            };
+            auto clarity = [&] (const char* preset, int console = -1, int bits = -1)
+            {
+                vp.selectPreset (programIndex (vp, preset));
+                setV ("wave", (float) bb::Wave::Voice);
+                if (console >= 0)
+                {
+                    setV ("console", (float) console);
+                    setV ("sustain", 1.0f);
+                }
+                if (bits >= 0)
+                    setV ("bits", (float) bits);
+                vp.notePlayer.play ({ { 0.0, seconds + 0.05, bb::VoiceSample::rootNote, 0.9f } });
+                return bbtest::speechClarity (clean, bb::VoiceSample::rate, monoOf (runOwn (vp, seconds + 0.6, sr)), sr);
+            };
+
+            // PLAY: exactly the recording, whatever the sound (here: a crunchy NES saw with echo)
+            vp.selectPreset (programIndex (vp, "Lo-Fi Saw Buzz"));
+            setV ("console", 1.0f);
+            setV ("echoMix", 0.4f);
+            vp.playVoiceClean (true);
+            const auto played = runOwn (vp, seconds + 0.4, sr);
+            const double same = bbtest::speechClarity (clean, bb::VoiceSample::rate, monoOf (played), sr);
+            const float playLevel = peakOf (played, 0.0, seconds, sr), playAfter = peakOf (played, seconds + 0.05, seconds + 0.4, sr);
+            vp.playVoiceClean (true);
+            const auto stopRun = runOwn (vp, 0.6, sr, 0.2, [&] { vp.playVoiceClean (false); });
+            const float afterStop = peakOf (stopRun, 0.25, 0.6, sr);
+            res.check (same > 0.99 && playLevel > 0.1f && playAfter < 1.0e-4f && afterStop < 1.0e-4f,
+                       "VOICE > PLAY: the recording just as recorded (no sound, no effects), STOP stops",
+                       "clarity " + String (same, 3) + ", " + String (Decibels::gainToDecibels (playLevel), 1) + " dB, then "
+                           + (playAfter < 1.0e-4f ? "quiet" : "STILL SOUNDING") + ", " + (afterStop < 1.0e-4f ? "stopped" : "DID NOT STOP"));
+
+            const double nes = clarity ("Classic Square", 1), gameBoy = clarity ("Classic Square", 2), crunch4 = clarity ("Classic Square", 0, 4);
+            res.check (nes > 0.79 && crunch4 > gameBoy - 0.05,
+                       "VOICE: words stay clear on NES (1-bit) and with CRUNCH 4-bit",
+                       "NES " + String (nes, 2) + ", CRUNCH 4-bit " + String (crunch4, 2) + " (Game Boy 4-bit " + String (gameBoy, 2) + ")");
+
+            String clearDetail;
+            bool clear = true;
+            for (auto [preset, atLeast] : { std::pair { "Major Chord Arp", 0.45 }, { "Note Arpeggiator", 0.4 }, { "Siren", 0.5 },
+                                            { "Coin Pickup", 0.45 }, { "Trill Lead", 0.85 }, { "Laser Zap", 0.85 } })
+            {
+                const double score = clarity (preset);
+                clear = clear && score >= atLeast;
+                clearDetail << preset << " " << String (score, 2) << (score >= atLeast ? "" : " (LOW)") << ", ";
+            }
+            res.check (clear, "VOICE: words stay clear through chords, arps, sirens, sweeps", clearDetail.dropLastCharacters (2));
+        }
+
         // The voice is kept with your project; factory presets leave it alone; silence is refused
         MemoryBlock projectState;
         proc.getStateInformation (projectState);
@@ -2377,6 +2547,49 @@ static int runFocusTest()
                        + ", " + (closedOk ? "closed, keys back" : "NOT CLOSED / KEYS LOST"));
     }
 
+    // 2d. YOUR VOICE > PLAY: the recording just as it was recorded; STOP stops it
+    if (auto* panel = findComponent<bb::MainPanel> (*editor))
+    {
+        panel->setBoxVisible ("voice", true);
+        MessageManager::getInstance()->runDispatchLoopUntil (200);
+        auto* box = findComponent<bb::Box> (*panel, [] (bb::Box& b) { return b.getId() == "voice"; });
+        auto* play = box != nullptr ? findButton (*box, "PLAY") : nullptr;
+        auto block = [&]
+        {
+            AudioBuffer<float> b (2, 512);
+            MidiBuffer m;
+            proc.processBlock (b, m);
+            return b.getMagnitude (0, 0, 512);
+        };
+        bool started = false, saysStop = false, stopped = false, keysKept = false;
+        float loudness = 0.0f;
+        for (int i = 0; i < 400; ++i)   // let the earlier tests' notes (the paste box's test note) finish first
+            block();
+        if (play != nullptr)
+        {
+            clickOn (*peer, *editor, *play);
+            for (int i = 0; i < 10; ++i)
+                loudness = jmax (loudness, block());
+            started = proc.getVoicePreviewPosition() > 0.0f && loudness > 0.01f;
+            MessageManager::getInstance()->runDispatchLoopUntil (150);
+            saysStop = play->getButtonText() == "STOP";
+            keysKept = piano->hasKeyboardFocus (false);
+            clickOn (*peer, *editor, *play);
+            block();
+            const float position = proc.getVoicePreviewPosition(), after = block();
+            MessageManager::getInstance()->runDispatchLoopUntil (600);
+            stopped = position < 0.0f && after < 1.0e-4f && play->getButtonText() == "PLAY";
+            if (! stopped)
+                std::cout << "        (after STOP: position " << position << ", level " << after << ", button "
+                          << play->getButtonText() << ")\n";
+        }
+        res.check (started && saysStop && stopped && keysKept,
+                   "YOUR VOICE > PLAY: plays the recording, button says STOP, STOP stops it",
+                   String (play != nullptr ? "found" : "NO PLAY BUTTON") + ", " + (started ? "playing" : "SILENT") + ", "
+                       + (saysStop ? "says STOP" : "TEXT NOT STOP") + ", " + (stopped ? "stopped" : "DID NOT STOP") + ", "
+                       + (keysKept ? "keys kept" : "KEYS LOST"));
+    }
+
     // 3. Open and close a drop-down menu: focus must come back by itself
     if (auto* combo = findComponent<ComboBox> (*editor))
     {
@@ -2438,6 +2651,196 @@ static int runIcon (const File& file)
 }
 
 //==============================================================================
+// A pretend sentence for the speech-clarity tests (CI has no recordings of real people):
+// syllables of a consonant (a hiss, a click or a hum) and a vowel (a buzzing voice shaped by
+// the mouth's three resonances, gliding from one vowel to the next), with a falling melody.
+static AudioBuffer<float> pretendSpeech (double rate)
+{
+    struct Vowel { double f1, f2, f3; };
+    const Vowel a { 730, 1090, 2440 }, i { 270, 2290, 3010 }, u { 300, 870, 2240 }, e { 530, 1840, 2480 }, o { 570, 840, 2410 };
+    enum Consonant { none, hiss, click, hum };
+    struct Syllable { Consonant c; Vowel v; double seconds; };
+    const Syllable words[] = { { hiss, a, 0.20 }, { click, i, 0.16 }, { hum, o, 0.22 }, { click, e, 0.18 },
+                               { none, u, 0.12 }, { hiss, i, 0.20 }, { hum, a, 0.24 }, { click, o, 0.26 } };
+
+    struct Resonator
+    {
+        double y1 = 0.0, y2 = 0.0;
+        double process (double x, double hz, double bandwidth, double sr)
+        {
+            const double r = std::exp (-MathConstants<double>::pi * bandwidth / sr);
+            const double y = (1.0 - r) * x + 2.0 * r * std::cos (MathConstants<double>::twoPi * hz / sr) * y1 - r * r * y2;
+            y2 = y1;
+            y1 = y;
+            return y;
+        }
+    };
+
+    std::vector<float> out;
+    Random noise (11);
+    Resonator f1, f2, f3, n1, n2;
+    Vowel now = a;
+    double phase = 0.0, t = 0.0;
+    auto add = [&] (double seconds, auto&& sample)
+    {
+        const int n = (int) (seconds * rate);
+        for (int k = 0; k < n; ++k, t += 1.0 / rate)
+        {
+            const double env = jmin (1.0, k / (0.015 * rate), (n - k) / (0.015 * rate));
+            out.push_back ((float) (sample (k, n) * env));
+        }
+    };
+    int index = 0;
+    for (const auto& s : words)
+    {
+        if (index++ == 4)
+            add (0.15, [] (int, int) { return 0.0; });   // a pause in the middle
+        switch (s.c)
+        {
+            case hiss:  add (0.09, [&] (int, int) { const double x = noise.nextDouble() * 2.0 - 1.0;
+                                                    return 2.5 * (n1.process (x, 3800.0, 900.0, rate) + 0.6 * n2.process (x, 2600.0, 700.0, rate)); }); break;
+            case click: add (0.03, [] (int, int) { return 0.0; });
+                        add (0.025, [&] (int, int) { return 3.0 * n1.process (noise.nextDouble() * 2.0 - 1.0, 3000.0, 1500.0, rate); }); break;
+            case hum:   add (0.07, [&] (int, int) { phase += 120.0 / rate; return 0.25 * std::sin (MathConstants<double>::twoPi * phase); }); break;
+            case none:  break;
+        }
+        const Vowel from = now;
+        add (s.seconds, [&] (int k, int)
+        {
+            const double glide = jmin (1.0, k / (0.05 * rate));   // the mouth moves to the new vowel in 50 ms
+            const double hz = 150.0 - 40.0 * t / 2.2;            // the sentence's melody falls
+            phase += hz / rate;
+            const double source = 2.0 * (phase - std::floor (phase)) - 1.0;   // the buzz of the vocal cords
+            const double x1 = from.f1 + (s.v.f1 - from.f1) * glide, x2 = from.f2 + (s.v.f2 - from.f2) * glide,
+                         x3 = from.f3 + (s.v.f3 - from.f3) * glide;
+            return 6.0 * (f1.process (source, x1, 90.0, rate) + 0.5 * f2.process (source, x2, 110.0, rate)
+                            + 0.3 * f3.process (source, x3, 160.0, rate));
+        });
+        now = s.v;
+        add (0.03, [] (int, int) { return 0.0; });
+    }
+
+    AudioBuffer<float> b (1, (int) out.size());
+    b.copyFrom (0, 0, out.data(), (int) out.size());
+    return b;
+}
+
+//==============================================================================
+// Developer tool: how clearly can you still hear the words of a recording (WAV files) on the
+// VOICE wave - on each console, and with every factory preset? (Score: tests/Intelligibility.h)
+static int runVoiceCheck (const StringArray& files)
+{
+    constexpr double sr = 48000.0;
+    auto set = [] (BitBuddyProcessor& p, const char* id, float value)
+    {
+        auto* prm = p.apvts.getParameter (id);
+        prm->setValueNotifyingHost (prm->convertTo0to1 (value));
+    };
+
+    struct Case { String name; std::function<void (BitBuddyProcessor&)> setup; };
+    std::vector<Case> cases;
+    static const char* consoles[] = { "Modern", "NES", "Game Boy", "C64" };
+    for (int c = 0; c < 4; ++c)
+        cases.push_back ({ String ("[plain] ") + consoles[c], [=] (BitBuddyProcessor& p)
+        {
+            p.selectPreset (programIndex (p, "Classic Square"));
+            set (p, "wave", (float) bb::Wave::Voice);
+            set (p, "attack", 0.001f);
+            set (p, "sustain", 1.0f);
+            set (p, "release", 0.05f);
+            set (p, "console", (float) c);
+            set (p, "echoMix", 0.0f);
+        } });
+    for (int bits : { 4 })
+        cases.push_back ({ "[plain] Modern " + String (bits) + "-bit", [=] (BitBuddyProcessor& p)
+        {
+            p.selectPreset (programIndex (p, "Classic Square"));
+            set (p, "wave", (float) bb::Wave::Voice);
+            set (p, "bits", (float) bits);
+        } });
+    for (int i = 0; i < (int) bb::factoryPresets().size(); ++i)
+        cases.push_back ({ bb::factoryPresets()[(size_t) i].name, [=] (BitBuddyProcessor& p)
+        {
+            p.selectPreset (i);
+            set (p, "wave", (float) bb::Wave::Voice);
+        } });
+
+    AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::vector<std::vector<double>> scores (cases.size());
+    for (auto& name : files)
+    {
+        AudioBuffer<float> audio, withoutNoise;
+        double rate = 48000.0;
+        if (name == "pretend")   // the tests' pretend sentence
+        {
+            audio = pretendSpeech (rate);
+        }
+        else
+        {
+            const bool noisy = name.startsWith ("noisy:");   // like a laptop microphone: room hiss + mains hum, not so loud
+            std::unique_ptr<AudioFormatReader> reader (formats.createReaderFor (File (noisy ? name.substring (6) : name)));
+            if (reader == nullptr)
+            {
+                std::cout << "can't read " << name << "\n";
+                return 1;
+            }
+            audio.setSize ((int) reader->numChannels, (int) reader->lengthInSamples);
+            reader->read (&audio, 0, audio.getNumSamples(), 0, true, true);
+            rate = reader->sampleRate;
+            if (noisy)
+            {
+                withoutNoise.makeCopyOf (audio);   // the words are judged against the clean speech
+                Random rng (3);
+                const float peak = audio.getMagnitude (0, audio.getNumSamples());
+                audio.applyGain (0.25f / jmax (1.0e-6f, peak));
+                for (int i = 0; i < audio.getNumSamples(); ++i)
+                    for (int ch = 0; ch < audio.getNumChannels(); ++ch)
+                        audio.addSample (ch, i, 0.004f * (rng.nextFloat() * 2.0f - 1.0f)
+                                                    + 0.002f * (float) std::sin (MathConstants<double>::twoPi * 50.0 * i / rate));
+            }
+        }
+
+        auto procPtr = std::make_unique<BitBuddyProcessor>();
+        auto& proc = *procPtr;
+        proc.setVoiceRecording (audio, rate);
+        const auto stored = proc.getVoiceSample().get();
+        const auto reference = withoutNoise.getNumSamples() > 0 ? bb::makeVoiceSample (withoutNoise, rate) : stored;
+        std::vector<float> clean (reference.size());
+        for (size_t i = 0; i < reference.size(); ++i)
+            clean[i] = reference[i] / 127.0f;
+        const double seconds = (double) stored.size() / bb::VoiceSample::rate;
+        const int maxEarlyMs = withoutNoise.getNumSamples() > 0 ? 150 : 0;
+
+        for (size_t c = 0; c < cases.size(); ++c)
+        {
+            cases[c].setup (proc);
+            proc.notePlayer.play ({ { 0.0, seconds + 0.05, bb::VoiceSample::rootNote, 0.9f } });   // like REC VOICE does
+            const auto out = runOwn (proc, seconds + 0.6, sr);
+            std::vector<float> mono ((size_t) out.getNumSamples());
+            for (int i = 0; i < out.getNumSamples(); ++i)
+                mono[(size_t) i] = 0.5f * (out.getSample (0, i) + out.getSample (1, i));
+            scores[c].push_back (bbtest::speechClarity (clean, bb::VoiceSample::rate, mono, sr, maxEarlyMs));
+        }
+    }
+
+    std::cout << "\nSpeech clarity (STOI, 1 = clean, 0.7 = hard work, < 0.5 = mush)\n\n";
+    for (size_t c = 0; c < cases.size(); ++c)
+    {
+        double sum = 0.0, low = 1.0;
+        String row = cases[c].name.paddedRight (' ', 22);
+        for (double s : scores[c])
+        {
+            row << String (s, 2) << " ";
+            sum += s;
+            low = jmin (low, s);
+        }
+        std::cout << row << "| mean " << String (sum / jmax<size_t> (1, scores[c].size()), 3) << "  min " << String (low, 2) << "\n";
+    }
+    return 0;
+}
+
+//==============================================================================
 int main (int argc, char* argv[])
 {
     ScopedJuceInitialiser_GUI juceInit;
@@ -2465,6 +2868,8 @@ int main (int argc, char* argv[])
         return runBench (args[1]);
     if (args.size() >= 2 && args[0] == "--icon")
         return runIcon (File (args[1]));
+    if (args.size() >= 2 && args[0] == "--voice-check")
+        return runVoiceCheck (StringArray (args.begin() + 1, args.size() - 1));
 
     std::cout << "usage:\n  BitBuddyTestHost --test <plugin.vst3>\n"
                  "  BitBuddyTestHost --demo <plugin.vst3> <outDir>\n"
